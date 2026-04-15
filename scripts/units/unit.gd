@@ -12,6 +12,13 @@ enum UnitRole {
 @export var ruler_path: NodePath
 @export var guard_slot_index: int = 0
 
+@export var faction_id: int = -1
+@export var faction_color: Color = Color(0.82, 0.24, 0.24, 1.0)
+@export var free_knight_color: Color = Color(0.55, 0.6, 0.68, 1.0)
+
+@export var auto_aggro_enabled: bool = true
+@export var aggro_radius: float = 260.0
+
 @export var move_speed: float = 300.0
 @export var waypoint_tolerance: float = 14.0
 
@@ -68,6 +75,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	if auto_aggro_enabled and not is_player_controlled:
+		_update_npc_aggro_target()
+
 	if role == UnitRole.ROYAL_GUARD:
 		_process_guard_logic(delta)
 		return
@@ -100,7 +110,7 @@ func is_dead() -> bool:
 func set_attack_target(target: Unit) -> void:
 	if _is_dead:
 		return
-	if target == null or not is_instance_valid(target) or target.is_dead():
+	if target == null or not is_instance_valid(target) or target.is_dead() or target == self:
 		_attack_target = null
 		return
 	_attack_target = target
@@ -131,6 +141,8 @@ func assign_guard_to_ruler(ruler: Unit, slot_index: int = 0) -> void:
 	role = UnitRole.ROYAL_GUARD
 	ruler_path = get_path_to(ruler)
 	guard_slot_index = slot_index
+	faction_id = ruler.faction_id
+	faction_color = ruler.faction_color
 	_apply_role_visuals()
 
 func clear_guard_assignment() -> void:
@@ -138,6 +150,8 @@ func clear_guard_assignment() -> void:
 	_path = PackedVector2Array()
 	_path_index = 0
 	set_role(UnitRole.FREE_KNIGHT)
+	faction_id = -1
+	_apply_role_visuals()
 
 func _process_guard_logic(delta: float) -> void:
 	var ruler := _get_ruler()
@@ -184,17 +198,17 @@ func _get_guard_hold_position(ruler: Unit) -> Vector2:
 func _apply_role_visuals() -> void:
 	match role:
 		UnitRole.RULER:
-			_visual.color = Color(0.85, 0.2, 0.2, 1)
+			_visual.color = faction_color.lightened(0.2)
 			_ruler_marker.visible = true
 		UnitRole.ROYAL_GUARD:
-			_visual.color = Color(0.8, 0.65, 0.2, 1)
+			_visual.color = faction_color.darkened(0.1)
 			_ruler_marker.visible = false
 		_:
-			_visual.color = Color(0.2, 0.35, 0.85, 1)
+			_visual.color = free_knight_color
 			_ruler_marker.visible = false
 
 func _process_attack_target(delta: float) -> void:
-	if not is_instance_valid(_attack_target) or _attack_target.is_dead():
+	if not is_instance_valid(_attack_target) or _attack_target.is_dead() or not _is_enemy(_attack_target):
 		_attack_target = null
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -246,6 +260,44 @@ func _repath_to(target_position: Vector2) -> void:
 	if world != null and world.has_method("find_path"):
 		_path = world.find_path(global_position, target_position)
 		_path_index = 0
+
+func _update_npc_aggro_target() -> void:
+	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
+		return
+
+	var nearest_enemy := _find_nearest_enemy_in_range(aggro_radius)
+	if nearest_enemy != null:
+		set_attack_target(nearest_enemy)
+
+func _find_nearest_enemy_in_range(radius: float) -> Unit:
+	var parent := get_parent()
+	if parent == null:
+		return null
+
+	var nearest: Unit = null
+	var nearest_distance := INF
+	for child in parent.get_children():
+		if not (child is Unit):
+			continue
+		if child == self or child.is_dead():
+			continue
+		if not _is_enemy(child):
+			continue
+		var distance := global_position.distance_to(child.global_position)
+		if distance > radius:
+			continue
+		if distance < nearest_distance:
+			nearest = child
+			nearest_distance = distance
+
+	return nearest
+
+func _is_enemy(other: Unit) -> bool:
+	if other == null or not is_instance_valid(other):
+		return false
+	if other == self or other.is_dead():
+		return false
+	return faction_id != other.faction_id
 
 func _find_clicked_unit() -> Unit:
 	var query := PhysicsPointQueryParameters2D.new()
