@@ -1,6 +1,16 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/units/unit.gd" id="1_unit_script"]
 
-[node name="Unit" type="Node2D"]
+[sub_resource type="CircleShape2D" id="1_circle_shape"]
+radius = 18.0
+
+[node name="Unit" type="CharacterBody2D"]
 script = ExtResource("1_unit_script")
+
+[node name="Visual" type="Polygon2D" parent="."]
+color = Color(0.2, 0.35, 0.85, 1)
+polygon = PackedVector2Array(0, -22, 16, -6, 12, 20, -12, 20, -16, -6)
+
+[node name="Collision" type="CollisionShape2D" parent="."]
+shape = SubResource("1_circle_shape")
