@@ -70,6 +70,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	and event.button_index == MOUSE_BUTTON_LEFT \
 	and event.pressed:
 		var clicked_unit: Unit = _find_clicked_unit()
+		var world: Node = get_parent()
+		if clicked_unit != null and world != null and world.has_method("set_debug_focus_unit"):
+			world.set_debug_focus_unit(clicked_unit)
 		if clicked_unit != null and clicked_unit != self and not clicked_unit.is_dead():
 			_attack_target = clicked_unit
 			_path = PackedVector2Array()
@@ -78,7 +81,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 
 		_attack_target = null
-		var world: Node = get_parent()
 		if world != null and world.has_method("find_path"):
 			_path = world.find_path(global_position, get_global_mouse_position())
 			_path_index = 0
@@ -131,6 +133,13 @@ func set_attack_target(target: Unit) -> void:
 	_repath_cooldown = 0.0
 	_path = PackedVector2Array()
 	_path_index = 0
+
+func get_attack_target() -> Unit:
+	if _attack_target == null or not is_instance_valid(_attack_target):
+		return null
+	if _attack_target.is_dead():
+		return null
+	return _attack_target
 
 func get_last_valid_attacker() -> Unit:
 	if _last_valid_attacker == null or not is_instance_valid(_last_valid_attacker):
