@@ -12,6 +12,11 @@ script = ExtResource("1")
 color = Color(0.2, 0.35, 0.85, 1)
 polygon = PackedVector2Array(0, -22, 16, -6, 12, 20, -12, 20, -16, -6)
 
+[node name="RulerMarker" type="Polygon2D" parent="."]
+visible = false
+color = Color(1, 0.95, 0.2, 1)
+polygon = PackedVector2Array(0, -34, 6, -24, -6, -24)
+
 [node name="Collision" type="CollisionShape2D" parent="."]
 shape = SubResource("1_circle_shape")
 
