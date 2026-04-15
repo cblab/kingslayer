@@ -1,7 +1,16 @@
 extends CharacterBody2D
 class_name Unit
 
+enum UnitRole {
+	FREE_KNIGHT,
+	RULER,
+	ROYAL_GUARD,
+}
+
+@export var role: UnitRole = UnitRole.FREE_KNIGHT
 @export var is_player_controlled: bool = true
+@export var ruler_path: NodePath
+@export var guard_slot_index: int = 0
 
 @export var move_speed: float = 300.0
 @export var waypoint_tolerance: float = 14.0
@@ -10,6 +19,10 @@ class_name Unit
 @export var attack_damage: float = 20.0
 @export var attack_range: float = 58.0
 @export var attack_interval: float = 0.75
+
+@export var guard_hold_radius: float = 110.0
+@export var guard_return_distance: float = 24.0
+@export var guard_chase_limit: float = 440.0
 
 var current_hp: float = 0.0
 
@@ -20,8 +33,12 @@ var _attack_cooldown: float = 0.0
 var _repath_cooldown: float = 0.0
 var _is_dead: bool = false
 
+@onready var _visual: Polygon2D = $Visual
+@onready var _ruler_marker: Node2D = $RulerMarker
+
 func _ready() -> void:
 	current_hp = max_hp
+	_apply_role_visuals()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_player_controlled or _is_dead:
@@ -50,21 +67,95 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	if role == UnitRole.ROYAL_GUARD:
+		_process_guard_logic(delta)
+		return
+
 	if _attack_target != null:
 		_process_attack_target(delta)
 	else:
 		_follow_current_path()
 
-func take_damage(amount: float, _attacker: Unit) -> void:
+func take_damage(amount: float, attacker: Unit) -> void:
 	if _is_dead:
 		return
 
 	current_hp -= amount
+
+	if role == UnitRole.RULER and attacker != null:
+		var world: Node = get_parent()
+		if world != null and world.has_method("on_ruler_attacked"):
+			world.on_ruler_attacked(self, attacker)
+
 	if current_hp <= 0.0:
 		_die()
 
 func is_dead() -> bool:
 	return _is_dead
+
+func set_attack_target(target: Unit) -> void:
+	if _is_dead:
+		return
+	if target == null or not is_instance_valid(target) or target.is_dead():
+		_attack_target = null
+		return
+	_attack_target = target
+	_repath_cooldown = 0.0
+	_path = PackedVector2Array()
+	_path_index = 0
+
+func _process_guard_logic(delta: float) -> void:
+	var ruler := _get_ruler()
+	if ruler == null:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+
+	if _attack_target != null:
+		if global_position.distance_to(ruler.global_position) > guard_chase_limit:
+			_attack_target = null
+			_path = PackedVector2Array()
+			_path_index = 0
+		else:
+			_process_attack_target(delta)
+			return
+
+	var hold_position := _get_guard_hold_position(ruler)
+	if global_position.distance_to(hold_position) <= guard_return_distance:
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+
+	_repath_cooldown -= delta
+	if _repath_cooldown <= 0.0:
+		_repath_to(hold_position)
+		_repath_cooldown = 0.35
+	_follow_current_path()
+
+func _get_ruler() -> Unit:
+	if ruler_path.is_empty():
+		return null
+	var node := get_node_or_null(ruler_path)
+	if node is Unit and not node.is_dead():
+		return node
+	return null
+
+func _get_guard_hold_position(ruler: Unit) -> Vector2:
+	var angle := PI * 0.5 * float(guard_slot_index)
+	var offset := Vector2.RIGHT.rotated(angle) * guard_hold_radius
+	return ruler.global_position + offset
+
+func _apply_role_visuals() -> void:
+	match role:
+		UnitRole.RULER:
+			_visual.color = Color(0.85, 0.2, 0.2, 1)
+			_ruler_marker.visible = true
+		UnitRole.ROYAL_GUARD:
+			_visual.color = Color(0.8, 0.65, 0.2, 1)
+			_ruler_marker.visible = false
+		_:
+			_visual.color = Color(0.2, 0.35, 0.85, 1)
+			_ruler_marker.visible = false
 
 func _process_attack_target(delta: float) -> void:
 	if not is_instance_valid(_attack_target) or _attack_target.is_dead():
