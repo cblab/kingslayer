@@ -130,3 +130,30 @@ polygon = PackedVector2Array(1000, 250, 1150, 300, 1100, 500, 950, 450)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerIsland"]
 polygon = PackedVector2Array(1000, 250, 1150, 300, 1100, 500, 950, 450)
+
+[node name="DebugHud" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="Panel" type="PanelContainer" parent="DebugHud"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 430.0
+offset_bottom = 272.0
+
+[node name="Margin" type="MarginContainer" parent="DebugHud/Panel"]
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="Content" type="VBoxContainer" parent="DebugHud/Panel/Margin"]
+
+[node name="StatusLabel" type="Label" parent="DebugHud/Panel/Margin/Content"]
+size_flags_horizontal = 3
+autowrap_mode = 2
+text = "Debug HUD lädt..."
+
+[node name="EventsLabel" type="Label" parent="DebugHud/Panel/Margin/Content"]
+size_flags_horizontal = 3
+autowrap_mode = 2
+text = "Events:"
