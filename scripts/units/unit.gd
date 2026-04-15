@@ -18,11 +18,15 @@ enum UnitRole {
 
 @export var auto_aggro_enabled: bool = true
 @export var aggro_radius: float = 260.0
+@export var ruler_search_radius: float = 420.0
+@export var guard_protect_radius: float = 260.0
 
 @export var move_speed: float = 300.0
 @export var waypoint_tolerance: float = 14.0
 
 @export var max_hp: float = 100.0
+@export var player_test_max_hp: float = 520.0
+@export var ruler_hp_bonus: float = 40.0
 @export var attack_damage: float = 20.0
 @export var attack_range: float = 58.0
 @export var attack_interval: float = 0.75
@@ -40,11 +44,21 @@ var _attack_cooldown: float = 0.0
 var _repath_cooldown: float = 0.0
 var _is_dead: bool = false
 var _last_valid_attacker: Unit = null
+var _rng := RandomNumberGenerator.new()
+
+const _HIT_SOUNDS: Array[AudioStream] = [
+	preload("res://scripts/sound/sword_clash_1.mp3"),
+	preload("res://scripts/sound/sword_clash_2.mp3"),
+	preload("res://scripts/sound/sword_clash_3.mp3"),
+]
 
 @onready var _visual: Polygon2D = $Visual
 @onready var _ruler_marker: Node2D = $RulerMarker
+@onready var _hit_audio: AudioStreamPlayer2D = $HitAudio
 
 func _ready() -> void:
+	_rng.randomize()
+	max_hp = _resolve_initial_max_hp()
 	current_hp = max_hp
 	_apply_role_visuals()
 
@@ -182,6 +196,13 @@ func _process_guard_logic(delta: float) -> void:
 		_repath_cooldown = 0.35
 	_follow_current_path()
 
+func _resolve_initial_max_hp() -> float:
+	if is_player_controlled:
+		return max(max_hp, player_test_max_hp)
+	if role == UnitRole.RULER:
+		return max_hp + ruler_hp_bonus
+	return max_hp
+
 func _get_ruler() -> Unit:
 	if ruler_path.is_empty():
 		return null
@@ -231,6 +252,7 @@ func _process_attack_target(delta: float) -> void:
 	_attack_cooldown -= delta
 	if _attack_cooldown <= 0.0:
 		_attack_target.take_damage(attack_damage, self)
+		_play_hit_sound()
 		_attack_cooldown = attack_interval
 
 func _follow_current_path() -> void:
@@ -262,6 +284,14 @@ func _repath_to(target_position: Vector2) -> void:
 		_path_index = 0
 
 func _update_npc_aggro_target() -> void:
+	match role:
+		UnitRole.ROYAL_GUARD:
+			_update_guard_aggro_target()
+			return
+		UnitRole.RULER:
+			_update_ruler_aggro_target()
+			return
+
 	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
 		return
 
@@ -269,7 +299,43 @@ func _update_npc_aggro_target() -> void:
 	if nearest_enemy != null:
 		set_attack_target(nearest_enemy)
 
+func _update_ruler_aggro_target() -> void:
+	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
+		return
+
+	var nearest_enemy := _find_nearest_enemy_in_range(ruler_search_radius)
+	if nearest_enemy != null:
+		set_attack_target(nearest_enemy)
+
+func _update_guard_aggro_target() -> void:
+	var ruler := _get_ruler()
+	if ruler == null:
+		_attack_target = null
+		return
+
+	var ruler_attacker := ruler.get_last_valid_attacker()
+	if ruler_attacker != null and _is_enemy(ruler_attacker):
+		if ruler.global_position.distance_to(ruler_attacker.global_position) <= guard_chase_limit:
+			set_attack_target(ruler_attacker)
+			return
+
+	var nearest_threat := _find_nearest_enemy_to_point_in_range(ruler.global_position, guard_protect_radius)
+	if nearest_threat != null:
+		set_attack_target(nearest_threat)
+		return
+
+	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
+		if global_position.distance_to(ruler.global_position) <= guard_chase_limit:
+			return
+
+	_attack_target = null
+	_path = PackedVector2Array()
+	_path_index = 0
+
 func _find_nearest_enemy_in_range(radius: float) -> Unit:
+	return _find_nearest_enemy_to_point_in_range(global_position, radius)
+
+func _find_nearest_enemy_to_point_in_range(center: Vector2, radius: float) -> Unit:
 	var parent := get_parent()
 	if parent == null:
 		return null
@@ -283,7 +349,7 @@ func _find_nearest_enemy_in_range(radius: float) -> Unit:
 			continue
 		if not _is_enemy(child):
 			continue
-		var distance := global_position.distance_to(child.global_position)
+		var distance := center.distance_to(child.global_position)
 		if distance > radius:
 			continue
 		if distance < nearest_distance:
@@ -291,6 +357,13 @@ func _find_nearest_enemy_in_range(radius: float) -> Unit:
 			nearest_distance = distance
 
 	return nearest
+
+func _play_hit_sound() -> void:
+	if _hit_audio == null or _HIT_SOUNDS.is_empty():
+		return
+	var sound_index := _rng.randi_range(0, _HIT_SOUNDS.size() - 1)
+	_hit_audio.stream = _HIT_SOUNDS[sound_index]
+	_hit_audio.play()
 
 func _is_enemy(other: Unit) -> bool:
 	if other == null or not is_instance_valid(other):
