@@ -25,3 +25,6 @@ path_desired_distance = 8.0
 target_desired_distance = 12.0
 avoidance_enabled = false
 navigation_layers = 1
+
+[node name="HitAudio" type="AudioStreamPlayer2D" parent="."]
+max_polyphony = 3
