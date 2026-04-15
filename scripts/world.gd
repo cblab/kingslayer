@@ -1,10 +1,18 @@
 extends Node2D
 
-var _current_ruler: Unit = null
+@export var world_stabilize_interval: float = 0.4
+
+var _stabilize_cooldown: float = 0.0
 
 func _ready() -> void:
-	_refresh_current_ruler()
-	_stabilize_ruler_and_guards()
+	_stabilize_world_state()
+
+func _process(delta: float) -> void:
+	_stabilize_cooldown -= delta
+	if _stabilize_cooldown > 0.0:
+		return
+	_stabilize_cooldown = world_stabilize_interval
+	_stabilize_world_state()
 
 func find_path(from_position: Vector2, to_position: Vector2) -> PackedVector2Array:
 	var nav_map := get_world_2d().navigation_map
@@ -13,71 +21,55 @@ func find_path(from_position: Vector2, to_position: Vector2) -> PackedVector2Arr
 		return PackedVector2Array([to_position])
 	return path
 
-func get_current_ruler() -> Unit:
-	if _is_valid_live_unit(_current_ruler):
-		return _current_ruler
-	return null
-
 func on_ruler_attacked(ruler: Unit, attacker: Unit) -> void:
-	if ruler != get_current_ruler():
+	if not _is_valid_live_unit(ruler):
 		return
 	if attacker == null or not is_instance_valid(attacker) or attacker.is_dead():
 		return
 
-	for child in get_children():
-		if not (child is Unit):
+	for guard in _get_live_units():
+		if guard.role != Unit.UnitRole.ROYAL_GUARD:
 			continue
-		if child.role != Unit.UnitRole.ROYAL_GUARD:
-			continue
-		var guard_ruler := _get_guard_ruler(child)
+		var guard_ruler := _get_guard_ruler(guard)
 		if guard_ruler != ruler:
 			continue
-		child.set_attack_target(attacker)
+		guard.set_attack_target(attacker)
 
 func on_ruler_died(dead_ruler: Unit, killer: Unit) -> void:
-	if dead_ruler == null or dead_ruler != get_current_ruler():
+	if dead_ruler == null or not is_instance_valid(dead_ruler):
 		return
 
-	_current_ruler = null
-
-	for child in get_children():
-		if not (child is Unit):
+	# Zerfall: Eskorte des toten Herrschers wird frei, keine Rebind-Übernahme.
+	for guard in _get_live_units():
+		if guard.role != Unit.UnitRole.ROYAL_GUARD:
 			continue
-		if child.role != Unit.UnitRole.ROYAL_GUARD:
-			continue
-		var guard_ruler := _get_guard_ruler(child)
+		var guard_ruler := _get_guard_ruler(guard)
 		if guard_ruler != dead_ruler:
 			continue
-		child.clear_guard_assignment()
+		guard.clear_guard_assignment()
 
 	if _is_valid_live_unit(killer) and killer != dead_ruler:
 		killer.set_role(Unit.UnitRole.RULER)
-		_current_ruler = killer
 
-	_stabilize_ruler_and_guards()
+	_stabilize_world_state()
 
-func _refresh_current_ruler() -> void:
-	_current_ruler = null
+func _stabilize_world_state() -> void:
+	for unit in _get_live_units():
+		if unit.role != Unit.UnitRole.ROYAL_GUARD:
+			continue
+		var guard_ruler := _get_guard_ruler(unit)
+		if guard_ruler == null:
+			unit.clear_guard_assignment()
+
+func _get_live_units() -> Array[Unit]:
+	var units: Array[Unit] = []
 	for child in get_children():
 		if not (child is Unit):
-			continue
-		if child.role != Unit.UnitRole.RULER:
 			continue
 		if not _is_valid_live_unit(child):
 			continue
-		_current_ruler = child
-		return
-
-func _stabilize_ruler_and_guards() -> void:
-	var live_ruler := get_current_ruler()
-	for child in get_children():
-		if not (child is Unit):
-			continue
-		if child.role != Unit.UnitRole.ROYAL_GUARD:
-			continue
-		var guard_ruler := _get_guard_ruler(child)
-		if live_ruler == null or guard_ruler != live_ruler:
-			child.clear_guard_assignment()
+		units.append(child)
+	return units
 
 func _get_guard_ruler(guard: Unit) -> Unit:
 	if guard == null or not is_instance_valid(guard):

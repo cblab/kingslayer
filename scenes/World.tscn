@@ -15,28 +15,92 @@ polygon = PackedVector2Array(-1000, -1000, 3000, -1000, 3000, 2000, -1000, 2000)
 [node name="PlayerUnit" parent="." instance=ExtResource("2_unit_scene")]
 position = Vector2(120, 360)
 role = 0
+faction_id = -1
+free_knight_color = Color(0.45, 0.52, 0.62, 1)
 
-[node name="RulerUnit" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(820, 360)
+[node name="RulerRed" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(360, 190)
 role = 1
 is_player_controlled = false
-move_speed = 220.0
+faction_id = 1
+faction_color = Color(0.86, 0.25, 0.25, 1)
+move_speed = 215.0
 
-[node name="GuardLeft" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(730, 360)
+[node name="RedGuardA" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(300, 260)
 role = 2
 is_player_controlled = false
-ruler_path = NodePath("../RulerUnit")
+ruler_path = NodePath("../RulerRed")
 guard_slot_index = 2
-move_speed = 270.0
+faction_id = 1
+faction_color = Color(0.86, 0.25, 0.25, 1)
+move_speed = 265.0
 
-[node name="GuardRight" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(910, 360)
+[node name="RedGuardB" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(435, 245)
 role = 2
 is_player_controlled = false
-ruler_path = NodePath("../RulerUnit")
+ruler_path = NodePath("../RulerRed")
 guard_slot_index = 0
-move_speed = 270.0
+faction_id = 1
+faction_color = Color(0.86, 0.25, 0.25, 1)
+move_speed = 265.0
+
+[node name="RulerGreen" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(840, 160)
+role = 1
+is_player_controlled = false
+faction_id = 2
+faction_color = Color(0.22, 0.76, 0.34, 1)
+move_speed = 215.0
+
+[node name="GreenGuardA" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(770, 240)
+role = 2
+is_player_controlled = false
+ruler_path = NodePath("../RulerGreen")
+guard_slot_index = 2
+faction_id = 2
+faction_color = Color(0.22, 0.76, 0.34, 1)
+move_speed = 265.0
+
+[node name="GreenGuardB" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(915, 240)
+role = 2
+is_player_controlled = false
+ruler_path = NodePath("../RulerGreen")
+guard_slot_index = 0
+faction_id = 2
+faction_color = Color(0.22, 0.76, 0.34, 1)
+move_speed = 265.0
+
+[node name="RulerBlue" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(640, 640)
+role = 1
+is_player_controlled = false
+faction_id = 3
+faction_color = Color(0.24, 0.46, 0.9, 1)
+move_speed = 215.0
+
+[node name="BlueGuardA" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(560, 580)
+role = 2
+is_player_controlled = false
+ruler_path = NodePath("../RulerBlue")
+guard_slot_index = 2
+faction_id = 3
+faction_color = Color(0.24, 0.46, 0.9, 1)
+move_speed = 265.0
+
+[node name="BlueGuardB" parent="." instance=ExtResource("2_unit_scene")]
+position = Vector2(720, 580)
+role = 2
+is_player_controlled = false
+ruler_path = NodePath("../RulerBlue")
+guard_slot_index = 0
+faction_id = 3
+faction_color = Color(0.24, 0.46, 0.9, 1)
+move_speed = 265.0
 
 [node name="Blockers" type="Node2D" parent="."]
 
