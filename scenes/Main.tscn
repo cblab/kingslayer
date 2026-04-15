@@ -1,0 +1,29 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/World.tscn" id="1_world"]
+[ext_resource type="Script" path="res://scripts/managers/game_manager.gd" id="2_game_manager"]
+[ext_resource type="Script" path="res://scripts/managers/world_manager.gd" id="3_world_manager"]
+[ext_resource type="Script" path="res://scripts/managers/kingdom_manager.gd" id="4_kingdom_manager"]
+[ext_resource type="Script" path="res://scripts/managers/spawn_manager.gd" id="5_spawn_manager"]
+[ext_resource type="Script" path="res://scripts/managers/loot_manager.gd" id="6_loot_manager"]
+
+[node name="Main" type="Node"]
+
+[node name="World" parent="." instance=ExtResource("1_world")]
+
+[node name="Managers" type="Node" parent="."]
+
+[node name="GameManager" type="Node" parent="Managers"]
+script = ExtResource("2_game_manager")
+
+[node name="WorldManager" type="Node" parent="Managers"]
+script = ExtResource("3_world_manager")
+
+[node name="KingdomManager" type="Node" parent="Managers"]
+script = ExtResource("4_kingdom_manager")
+
+[node name="SpawnManager" type="Node" parent="Managers"]
+script = ExtResource("5_spawn_manager")
+
+[node name="LootManager" type="Node" parent="Managers"]
+script = ExtResource("6_loot_manager")
