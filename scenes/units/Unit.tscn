@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/units/unit.gd" id="1"]
 
-[sub_resource type="CircleShape2D" id="CircleShape2D_1"]
+[sub_resource type="CircleShape2D" id="1_circle_shape"]
 radius = 18.0
 
 [node name="Unit" type="CharacterBody2D"]
@@ -13,7 +13,7 @@ color = Color(0.2, 0.35, 0.85, 1)
 polygon = PackedVector2Array(0, -22, 16, -6, 12, 20, -12, 20, -16, -6)
 
 [node name="Collision" type="CollisionShape2D" parent="."]
-shape = SubResource("CircleShape2D_1")
+shape = SubResource("1_circle_shape")
 
 [node name="NavigationAgent2D" type="NavigationAgent2D" parent="."]
 path_desired_distance = 8.0
