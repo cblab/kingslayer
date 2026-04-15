@@ -14,3 +14,8 @@ polygon = PackedVector2Array(0, -22, 16, -6, 12, 20, -12, 20, -16, -6)
 
 [node name="Collision" type="CollisionShape2D" parent="."]
 shape = SubResource("1_circle_shape")
+
+[node name="NavigationAgent2D" type="NavigationAgent2D" parent="."]
+path_desired_distance = 8.0
+target_desired_distance = 10.0
+navigation_layers = 1
