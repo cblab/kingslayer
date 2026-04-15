@@ -1,4 +1,6 @@
-[gd_scene format=3 uid="uid://b1x2y3z4w5v6u"]
+[gd_scene load_steps=2 format=3 uid="uid://b1x2y3z4w5v6u"]
+
+[ext_resource type="PackedScene" path="res://scenes/units/Unit.tscn" id="1_unit_scene"]
 
 [node name="World" type="Node2D"]
 
@@ -7,6 +9,9 @@
 [node name="GroundVisual" type="Polygon2D" parent="Ground"]
 color = Color(0.9, 0.9, 0.9, 1)
 polygon = PackedVector2Array(-1000, -1000, 3000, -1000, 3000, 2000, -1000, 2000)
+
+[node name="PlayerUnit" parent="." instance=ExtResource("1_unit_scene")]
+position = Vector2(120, 360)
 
 [node name="Blockers" type="Node2D" parent="."]
 
