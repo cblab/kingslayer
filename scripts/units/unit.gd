@@ -122,9 +122,27 @@ func set_role(new_role: UnitRole) -> void:
 	guard_slot_index = 0
 	_apply_role_visuals()
 
+func assign_guard_to_ruler(ruler: Unit, slot_index: int = 0) -> void:
+	if _is_dead:
+		return
+	if ruler == null or not is_instance_valid(ruler) or ruler.is_dead():
+		clear_guard_assignment()
+		return
+	role = UnitRole.ROYAL_GUARD
+	ruler_path = get_path_to(ruler)
+	guard_slot_index = slot_index
+	_apply_role_visuals()
+
+func clear_guard_assignment() -> void:
+	_attack_target = null
+	_path = PackedVector2Array()
+	_path_index = 0
+	set_role(UnitRole.FREE_KNIGHT)
+
 func _process_guard_logic(delta: float) -> void:
 	var ruler := _get_ruler()
 	if ruler == null:
+		clear_guard_assignment()
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
