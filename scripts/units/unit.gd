@@ -32,6 +32,7 @@ var _attack_target: Unit = null
 var _attack_cooldown: float = 0.0
 var _repath_cooldown: float = 0.0
 var _is_dead: bool = false
+var _last_valid_attacker: Unit = null
 
 @onready var _visual: Polygon2D = $Visual
 @onready var _ruler_marker: Node2D = $RulerMarker
@@ -80,6 +81,9 @@ func take_damage(amount: float, attacker: Unit) -> void:
 	if _is_dead:
 		return
 
+	if attacker != null and is_instance_valid(attacker) and not attacker.is_dead() and attacker != self:
+		_last_valid_attacker = attacker
+
 	current_hp -= amount
 
 	if role == UnitRole.RULER and attacker != null:
@@ -103,6 +107,20 @@ func set_attack_target(target: Unit) -> void:
 	_repath_cooldown = 0.0
 	_path = PackedVector2Array()
 	_path_index = 0
+
+func get_last_valid_attacker() -> Unit:
+	if _last_valid_attacker == null or not is_instance_valid(_last_valid_attacker):
+		return null
+	if _last_valid_attacker.is_dead():
+		return null
+	return _last_valid_attacker
+
+func set_role(new_role: UnitRole) -> void:
+	role = new_role
+	if role != UnitRole.ROYAL_GUARD:
+		ruler_path = NodePath()
+	guard_slot_index = 0
+	_apply_role_visuals()
 
 func _process_guard_logic(delta: float) -> void:
 	var ruler := _get_ruler()
@@ -233,4 +251,10 @@ func _die() -> void:
 
 	_is_dead = true
 	print("Unit died: ", name)
+
+	if role == UnitRole.RULER:
+		var world: Node = get_parent()
+		if world != null and world.has_method("on_ruler_died"):
+			world.on_ruler_died(self, get_last_valid_attacker())
+
 	queue_free()

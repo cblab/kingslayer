@@ -20,3 +20,21 @@ func on_ruler_attacked(ruler: Unit, attacker: Unit) -> void:
 		if guard_ruler != ruler:
 			continue
 		child.set_attack_target(attacker)
+
+func on_ruler_died(dead_ruler: Unit, killer: Unit) -> void:
+	if dead_ruler == null:
+		return
+
+	for child in get_children():
+		if not (child is Unit):
+			continue
+		if child.role != Unit.UnitRole.ROYAL_GUARD:
+			continue
+		var guard_ruler := child.get_node_or_null(child.ruler_path)
+		if guard_ruler != dead_ruler:
+			continue
+		child.set_attack_target(null)
+		child.set_role(Unit.UnitRole.FREE_KNIGHT)
+
+	if killer != null and is_instance_valid(killer) and not killer.is_dead() and killer != dead_ruler:
+		killer.set_role(Unit.UnitRole.RULER)
