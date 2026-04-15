@@ -6,11 +6,11 @@
 
 [node name="MainSnowField" type="Polygon2D" parent="Ground"]
 color = Color(0.9, 0.952941, 1, 1)
-polygon = PackedVector2Array(-760, -260, -520, -340, 120, -340, 360, -250, 460, -90, 420, 90, 320, 240, 100, 330, -460, 330, -700, 220, -780, 20)
+polygon = PackedVector2Array(-1180, -280, -900, -430, -260, -520, 420, -470, 950, -300, 1210, 30, 1120, 340, 760, 520, 180, 620, -520, 570, -980, 390, -1210, 110)
 
 [node name="PassSnowPatch" type="Polygon2D" parent="Ground"]
 color = Color(0.854902, 0.921569, 0.992157, 1)
-polygon = PackedVector2Array(360, -20, 520, -80, 760, -70, 900, 10, 900, 190, 740, 260, 520, 240, 380, 140)
+polygon = PackedVector2Array(900, -120, 1110, -180, 1300, -120, 1440, 30, 1450, 240, 1320, 350, 1110, 370, 920, 260, 840, 70)
 
 [node name="Blockers" type="Node2D" parent="."]
 
@@ -18,70 +18,70 @@ polygon = PackedVector2Array(360, -20, 520, -80, 760, -70, 900, 10, 900, 190, 74
 
 [node name="Visual" type="Polygon2D" parent="Blockers/NorthWall"]
 color = Color(0.196078, 0.227451, 0.278431, 1)
-polygon = PackedVector2Array(-700, -360, -420, -430, 130, -430, 430, -360, 360, -240, -640, -240)
+polygon = PackedVector2Array(-980, -560, -360, -670, 360, -640, 940, -470, 860, -340, -900, -340)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/NorthWall"]
-polygon = PackedVector2Array(-700, -360, -420, -430, 130, -430, 430, -360, 360, -240, -640, -240)
+polygon = PackedVector2Array(-980, -560, -360, -670, 360, -640, 940, -470, 860, -340, -900, -340)
 
 [node name="SouthWall" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/SouthWall"]
 color = Color(0.180392, 0.211765, 0.262745, 1)
-polygon = PackedVector2Array(-620, 240, 260, 240, 420, 360, 180, 430, -420, 430, -700, 330)
+polygon = PackedVector2Array(-930, 430, 680, 430, 920, 610, 430, 770, -430, 760, -980, 610)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/SouthWall"]
-polygon = PackedVector2Array(-620, 240, 260, 240, 420, 360, 180, 430, -420, 430, -700, 330)
+polygon = PackedVector2Array(-930, 430, 680, 430, 920, 610, 430, 770, -430, 760, -980, 610)
 
 [node name="WestRock" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/WestRock"]
 color = Color(0.160784, 0.188235, 0.235294, 1)
-polygon = PackedVector2Array(-860, -180, -700, -250, -620, -120, -620, 180, -750, 280, -900, 120)
+polygon = PackedVector2Array(-1370, -170, -1140, -300, -980, -120, -980, 270, -1160, 430, -1410, 230)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/WestRock"]
-polygon = PackedVector2Array(-860, -180, -700, -250, -620, -120, -620, 180, -750, 280, -900, 120)
+polygon = PackedVector2Array(-1370, -170, -1140, -300, -980, -120, -980, 270, -1160, 430, -1410, 230)
 
 [node name="EngstelleNorthMass" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/EngstelleNorthMass"]
 color = Color(0.137255, 0.164706, 0.211765, 1)
-polygon = PackedVector2Array(60, -210, 260, -240, 340, -130, 280, -20, 120, -10, 20, -100)
+polygon = PackedVector2Array(210, -300, 510, -330, 640, -170, 560, -20, 300, -10, 160, -140)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/EngstelleNorthMass"]
-polygon = PackedVector2Array(60, -210, 260, -240, 340, -130, 280, -20, 120, -10, 20, -100)
+polygon = PackedVector2Array(210, -300, 510, -330, 640, -170, 560, -20, 300, -10, 160, -140)
 
 [node name="EngstelleSouthMass" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/EngstelleSouthMass"]
 color = Color(0.137255, 0.164706, 0.211765, 1)
-polygon = PackedVector2Array(40, 90, 220, 70, 340, 150, 320, 280, 170, 330, 30, 250, -10, 160)
+polygon = PackedVector2Array(200, 90, 490, 70, 660, 190, 620, 360, 370, 430, 170, 320, 120, 180)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/EngstelleSouthMass"]
-polygon = PackedVector2Array(40, 90, 220, 70, 340, 150, 320, 280, 170, 330, 30, 250, -10, 160)
+polygon = PackedVector2Array(200, 90, 490, 70, 660, 190, 620, 360, 370, 430, 170, 320, 120, 180)
 
 [node name="PassRockUpper" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/PassRockUpper"]
 color = Color(0.121569, 0.14902, 0.2, 1)
-polygon = PackedVector2Array(470, -170, 660, -220, 790, -140, 740, -10, 580, 0, 450, -60)
+polygon = PackedVector2Array(930, -260, 1140, -320, 1330, -220, 1240, -40, 1060, 0, 900, -100)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/PassRockUpper"]
-polygon = PackedVector2Array(470, -170, 660, -220, 790, -140, 740, -10, 580, 0, 450, -60)
+polygon = PackedVector2Array(930, -260, 1140, -320, 1330, -220, 1240, -40, 1060, 0, 900, -100)
 
 [node name="PassRockLower" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/PassRockLower"]
 color = Color(0.121569, 0.14902, 0.2, 1)
-polygon = PackedVector2Array(450, 190, 610, 170, 790, 250, 750, 380, 550, 420, 420, 320)
+polygon = PackedVector2Array(910, 250, 1120, 230, 1340, 350, 1280, 520, 1040, 580, 860, 450)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/PassRockLower"]
-polygon = PackedVector2Array(450, 190, 610, 170, 790, 250, 750, 380, 550, 420, 420, 320)
+polygon = PackedVector2Array(910, 250, 1120, 230, 1340, 350, 1280, 520, 1040, 580, 860, 450)
 
 [node name="PassBackRock" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/PassBackRock"]
 color = Color(0.105882, 0.133333, 0.184314, 1)
-polygon = PackedVector2Array(860, -40, 980, 40, 980, 170, 860, 250, 740, 170, 740, 40)
+polygon = PackedVector2Array(1360, -30, 1510, 80, 1510, 280, 1360, 390, 1210, 280, 1210, 80)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/PassBackRock"]
-polygon = PackedVector2Array(860, -40, 980, 40, 980, 170, 860, 250, 740, 170, 740, 40)
+polygon = PackedVector2Array(1360, -30, 1510, 80, 1510, 280, 1360, 390, 1210, 280, 1210, 80)
