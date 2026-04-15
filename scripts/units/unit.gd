@@ -15,10 +15,16 @@ func _physics_process(_delta: float) -> void:
 		move_and_slide()
 		return
 
+	var path := _navigation_agent.get_current_navigation_path()
+	if path.is_empty():
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+
 	var next_path_position := _navigation_agent.get_next_path_position()
 	var to_next := next_path_position - global_position
 
-	if to_next.length_squared() <= 0.0001:
+	if to_next.length() <= _navigation_agent.path_desired_distance:
 		velocity = Vector2.ZERO
 	else:
 		velocity = to_next.normalized() * move_speed
