@@ -1,29 +1,31 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene format=3 uid="uid://df8uqvlkchy7h"]
 
-[ext_resource type="PackedScene" path="res://scenes/World.tscn" id="1_world"]
-[ext_resource type="Script" path="res://scripts/managers/game_manager.gd" id="2_game_manager"]
-[ext_resource type="Script" path="res://scripts/managers/world_manager.gd" id="3_world_manager"]
-[ext_resource type="Script" path="res://scripts/managers/kingdom_manager.gd" id="4_kingdom_manager"]
-[ext_resource type="Script" path="res://scripts/managers/spawn_manager.gd" id="5_spawn_manager"]
-[ext_resource type="Script" path="res://scripts/managers/loot_manager.gd" id="6_loot_manager"]
+[ext_resource type="PackedScene" uid="uid://b1x2y304w5v6u" path="res://scenes/World.tscn" id="1_world"]
+[ext_resource type="Script" uid="uid://c1s71q2ev1ccd" path="res://scripts/managers/game_manager.gd" id="2_game_manager"]
+[ext_resource type="Script" uid="uid://ddghdp5h632d3" path="res://scripts/world.gd" id="2_nxtc6"]
+[ext_resource type="Script" uid="uid://bvo43lqp43kmp" path="res://scripts/managers/world_manager.gd" id="3_world_manager"]
+[ext_resource type="Script" uid="uid://bsli6dtlihdq5" path="res://scripts/managers/kingdom_manager.gd" id="4_kingdom_manager"]
+[ext_resource type="Script" uid="uid://b5qo1yo375id4" path="res://scripts/managers/spawn_manager.gd" id="5_spawn_manager"]
+[ext_resource type="Script" uid="uid://dq6ywy2kqvik2" path="res://scripts/managers/loot_manager.gd" id="6_loot_manager"]
 
-[node name="Main" type="Node"]
+[node name="Main" type="Node" unique_id=577043526]
 
-[node name="World" parent="." instance=ExtResource("1_world")]
+[node name="World" parent="." unique_id=265986535 instance=ExtResource("1_world")]
+script = ExtResource("2_nxtc6")
 
-[node name="Managers" type="Node" parent="."]
+[node name="Managers" type="Node" parent="." unique_id=1643407362]
 
-[node name="GameManager" type="Node" parent="Managers"]
+[node name="GameManager" type="Node" parent="Managers" unique_id=460272843]
 script = ExtResource("2_game_manager")
 
-[node name="WorldManager" type="Node" parent="Managers"]
+[node name="WorldManager" type="Node" parent="Managers" unique_id=2074025340]
 script = ExtResource("3_world_manager")
 
-[node name="KingdomManager" type="Node" parent="Managers"]
+[node name="KingdomManager" type="Node" parent="Managers" unique_id=832363332]
 script = ExtResource("4_kingdom_manager")
 
-[node name="SpawnManager" type="Node" parent="Managers"]
+[node name="SpawnManager" type="Node" parent="Managers" unique_id=703192327]
 script = ExtResource("5_spawn_manager")
 
-[node name="LootManager" type="Node" parent="Managers"]
+[node name="LootManager" type="Node" parent="Managers" unique_id=970090479]
 script = ExtResource("6_loot_manager")
