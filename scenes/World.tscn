@@ -10,16 +10,16 @@ script = ExtResource("1_world_script")
 
 [node name="GroundVisual" type="Polygon2D" parent="Ground"]
 color = Color(0.9, 0.9, 0.9, 1)
-polygon = PackedVector2Array(-1000, -1000, 3000, -1000, 3000, 2000, -1000, 2000)
+polygon = PackedVector2Array(-1400, -1300, 3600, -1300, 3600, 2600, -1400, 2600)
 
 [node name="PlayerUnit" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(120, 360)
+position = Vector2(220, 520)
 role = 0
 faction_id = -1
 free_knight_color = Color(0.45, 0.52, 0.62, 1)
 
 [node name="RulerRed" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(360, 190)
+position = Vector2(120, 120)
 role = 1
 is_player_controlled = false
 faction_id = 1
@@ -27,7 +27,7 @@ faction_color = Color(0.86, 0.25, 0.25, 1)
 move_speed = 215.0
 
 [node name="RedGuardA" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(300, 260)
+position = Vector2(30, 220)
 role = 2
 is_player_controlled = false
 ruler_path = NodePath("../RulerRed")
@@ -37,7 +37,7 @@ faction_color = Color(0.86, 0.25, 0.25, 1)
 move_speed = 265.0
 
 [node name="RedGuardB" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(435, 245)
+position = Vector2(220, 220)
 role = 2
 is_player_controlled = false
 ruler_path = NodePath("../RulerRed")
@@ -47,7 +47,7 @@ faction_color = Color(0.86, 0.25, 0.25, 1)
 move_speed = 265.0
 
 [node name="RulerGreen" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(840, 160)
+position = Vector2(1330, 120)
 role = 1
 is_player_controlled = false
 faction_id = 2
@@ -55,7 +55,7 @@ faction_color = Color(0.22, 0.76, 0.34, 1)
 move_speed = 215.0
 
 [node name="GreenGuardA" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(770, 240)
+position = Vector2(1230, 220)
 role = 2
 is_player_controlled = false
 ruler_path = NodePath("../RulerGreen")
@@ -65,7 +65,7 @@ faction_color = Color(0.22, 0.76, 0.34, 1)
 move_speed = 265.0
 
 [node name="GreenGuardB" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(915, 240)
+position = Vector2(1430, 220)
 role = 2
 is_player_controlled = false
 ruler_path = NodePath("../RulerGreen")
@@ -75,7 +75,7 @@ faction_color = Color(0.22, 0.76, 0.34, 1)
 move_speed = 265.0
 
 [node name="RulerBlue" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(640, 640)
+position = Vector2(730, 980)
 role = 1
 is_player_controlled = false
 faction_id = 3
@@ -83,7 +83,7 @@ faction_color = Color(0.24, 0.46, 0.9, 1)
 move_speed = 215.0
 
 [node name="BlueGuardA" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(560, 580)
+position = Vector2(620, 900)
 role = 2
 is_player_controlled = false
 ruler_path = NodePath("../RulerBlue")
@@ -93,7 +93,7 @@ faction_color = Color(0.24, 0.46, 0.9, 1)
 move_speed = 265.0
 
 [node name="BlueGuardB" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(720, 580)
+position = Vector2(840, 900)
 role = 2
 is_player_controlled = false
 ruler_path = NodePath("../RulerBlue")
@@ -108,28 +108,55 @@ move_speed = 265.0
 
 [node name="Visual" type="Polygon2D" parent="Blockers/BlockerTop"]
 color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(300, -200, 800, -200, 700, 250, 400, 250)
+polygon = PackedVector2Array(180, -360, 980, -360, 900, 180, 260, 220)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerTop"]
-polygon = PackedVector2Array(300, -200, 800, -200, 700, 250, 400, 250)
+polygon = PackedVector2Array(180, -360, 980, -360, 900, 180, 260, 220)
 
 [node name="BlockerBottom" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/BlockerBottom"]
 color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(300, 900, 800, 900, 700, 450, 400, 450)
+polygon = PackedVector2Array(120, 1380, 980, 1380, 900, 760, 220, 760)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerBottom"]
-polygon = PackedVector2Array(300, 900, 800, 900, 700, 450, 400, 450)
+polygon = PackedVector2Array(120, 1380, 980, 1380, 900, 760, 220, 760)
 
 [node name="BlockerIsland" type="StaticBody2D" parent="Blockers"]
 
 [node name="Visual" type="Polygon2D" parent="Blockers/BlockerIsland"]
 color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(1000, 250, 1150, 300, 1100, 500, 950, 450)
+polygon = PackedVector2Array(1260, 260, 1480, 330, 1410, 620, 1180, 560)
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerIsland"]
-polygon = PackedVector2Array(1000, 250, 1150, 300, 1100, 500, 950, 450)
+polygon = PackedVector2Array(1260, 260, 1480, 330, 1410, 620, 1180, 560)
+
+[node name="BlockerWestRidge" type="StaticBody2D" parent="Blockers"]
+
+[node name="Visual" type="Polygon2D" parent="Blockers/BlockerWestRidge"]
+color = Color(0.25, 0.3, 0.35, 1)
+polygon = PackedVector2Array(-420, 300, -120, 240, 20, 520, -70, 880, -360, 820, -520, 560)
+
+[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerWestRidge"]
+polygon = PackedVector2Array(-420, 300, -120, 240, 20, 520, -70, 880, -360, 820, -520, 560)
+
+[node name="BlockerEastRidge" type="StaticBody2D" parent="Blockers"]
+
+[node name="Visual" type="Polygon2D" parent="Blockers/BlockerEastRidge"]
+color = Color(0.25, 0.3, 0.35, 1)
+polygon = PackedVector2Array(1700, 280, 2050, 340, 2200, 700, 2040, 1020, 1710, 930, 1600, 560)
+
+[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerEastRidge"]
+polygon = PackedVector2Array(1700, 280, 2050, 340, 2200, 700, 2040, 1020, 1710, 930, 1600, 560)
+
+[node name="BlockerCenterSpur" type="StaticBody2D" parent="Blockers"]
+
+[node name="Visual" type="Polygon2D" parent="Blockers/BlockerCenterSpur"]
+color = Color(0.25, 0.3, 0.35, 1)
+polygon = PackedVector2Array(520, 360, 860, 360, 940, 560, 730, 760, 520, 640, 450, 500)
+
+[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerCenterSpur"]
+polygon = PackedVector2Array(520, 360, 860, 360, 940, 560, 730, 760, 520, 640, 450, 500)
 
 [node name="DebugHud" type="CanvasLayer" parent="."]
 layer = 10
