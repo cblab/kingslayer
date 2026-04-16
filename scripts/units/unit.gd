@@ -13,6 +13,8 @@ enum UnitRole {
 @export var guard_slot_index: int = 0
 
 @export var faction_id: int = -1
+@export var kingdom_id: int = -1
+@export var team_id: int = -1
 @export var faction_color: Color = Color(0.82, 0.24, 0.24, 1.0)
 @export var free_knight_color: Color = Color(0.55, 0.6, 0.68, 1.0)
 
@@ -239,6 +241,8 @@ func assign_guard_to_ruler(ruler: Unit, slot_index: int = 0) -> void:
 	ruler_path = get_path_to(ruler)
 	guard_slot_index = slot_index
 	faction_id = ruler.faction_id
+	kingdom_id = ruler.kingdom_id
+	team_id = ruler.team_id
 	faction_color = ruler.faction_color
 	_apply_role_visuals()
 
@@ -247,10 +251,29 @@ func clear_guard_assignment() -> void:
 	_path = PackedVector2Array()
 	_path_index = 0
 	set_role(UnitRole.FREE_KNIGHT)
-	faction_id = -1
+	reset_free_knight_identity()
 	ruler_path = NodePath()
 	guard_slot_index = 0
 	_apply_role_visuals()
+
+func absorb_ruler_identity_from(old_ruler: Unit) -> void:
+	if old_ruler == null or not is_instance_valid(old_ruler):
+		return
+	role = UnitRole.RULER
+	ruler_path = NodePath()
+	guard_slot_index = 0
+	faction_id = old_ruler.faction_id
+	kingdom_id = old_ruler.kingdom_id
+	team_id = old_ruler.team_id
+	faction_color = old_ruler.faction_color
+	_disband_cooldown_active = false
+	_disband_cooldown_timer = 0.0
+	_apply_role_visuals()
+
+func reset_free_knight_identity() -> void:
+	faction_id = -1
+	kingdom_id = -1
+	team_id = -1
 
 func start_disband_cooldown(duration: float = -1.0) -> void:
 	_disband_cooldown_active = true
@@ -527,7 +550,12 @@ func _try_pick_ruler_search_point(previous_target: Vector2 = Vector2.ZERO) -> bo
 	if not world.has_method("try_get_valid_ruler_search_point"):
 		return false
 
-	var result: Variant = world.try_get_valid_ruler_search_point(global_position, _RULER_SEARCH_MIN_TARGET_DISTANCE)
+	var result: Variant = world.try_get_valid_ruler_search_point(
+		global_position,
+		_RULER_SEARCH_MIN_TARGET_DISTANCE,
+		ruler_search_move_distance_max,
+		12
+	)
 	if not (result is Dictionary):
 		return false
 	var payload: Dictionary = result
@@ -647,6 +675,8 @@ func _is_enemy(other: Unit) -> bool:
 		return not other.is_disband_cooldown_active()
 	if other.is_player_controlled and role == UnitRole.FREE_KNIGHT:
 		return not is_disband_cooldown_active()
+	if team_id >= 0 and other.team_id >= 0:
+		return team_id != other.team_id
 	return faction_id != other.faction_id
 
 func _find_clicked_unit() -> Unit:
