@@ -34,6 +34,10 @@ enum UnitRole {
 @export var guard_hold_radius: float = 110.0
 @export var guard_return_distance: float = 24.0
 @export var guard_chase_limit: float = 440.0
+@export var ruler_search_move_interval_min: float = 2.4
+@export var ruler_search_move_interval_max: float = 4.2
+@export var ruler_search_move_distance_min: float = 180.0
+@export var ruler_search_move_distance_max: float = 420.0
 
 var current_hp: float = 0.0
 
@@ -45,6 +49,9 @@ var _repath_cooldown: float = 0.0
 var _is_dead: bool = false
 var _last_valid_attacker: Unit = null
 var _rng := RandomNumberGenerator.new()
+var _ruler_search_timer: float = 0.0
+var _ruler_search_point: Vector2 = Vector2.ZERO
+var _has_ruler_search_point: bool = false
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -100,6 +107,8 @@ func _physics_process(delta: float) -> void:
 
 	if _attack_target != null:
 		_process_attack_target(delta)
+	elif role == UnitRole.RULER and not is_player_controlled:
+		_process_ruler_search_movement(delta)
 	else:
 		_follow_current_path()
 
@@ -315,6 +324,34 @@ func _update_ruler_aggro_target() -> void:
 	var nearest_enemy := _find_nearest_enemy_in_range(ruler_search_radius)
 	if nearest_enemy != null:
 		set_attack_target(nearest_enemy)
+		_has_ruler_search_point = false
+
+func _process_ruler_search_movement(delta: float) -> void:
+	_ruler_search_timer -= delta
+
+	if _has_ruler_search_point:
+		if global_position.distance_to(_ruler_search_point) <= waypoint_tolerance + 6.0:
+			_has_ruler_search_point = false
+			_path = PackedVector2Array()
+			_path_index = 0
+
+	if _ruler_search_timer <= 0.0 or not _has_ruler_search_point:
+		_ruler_search_point = _pick_ruler_search_point()
+		_has_ruler_search_point = true
+		_repath_to(_ruler_search_point)
+		_ruler_search_timer = _rng.randf_range(ruler_search_move_interval_min, ruler_search_move_interval_max)
+
+	_follow_current_path()
+
+func _pick_ruler_search_point() -> Vector2:
+	var nearest_enemy := _find_nearest_enemy_any_distance()
+	if nearest_enemy != null:
+		return nearest_enemy.global_position
+
+	var angle := _rng.randf_range(0.0, TAU)
+	var distance := _rng.randf_range(ruler_search_move_distance_min, ruler_search_move_distance_max)
+	var offset := Vector2.RIGHT.rotated(angle) * distance
+	return global_position + offset
 
 func _update_guard_aggro_target() -> void:
 	var ruler := _get_ruler()
@@ -343,6 +380,9 @@ func _update_guard_aggro_target() -> void:
 
 func _find_nearest_enemy_in_range(radius: float) -> Unit:
 	return _find_nearest_enemy_to_point_in_range(global_position, radius)
+
+func _find_nearest_enemy_any_distance() -> Unit:
+	return _find_nearest_enemy_to_point_in_range(global_position, INF)
 
 func _find_nearest_enemy_to_point_in_range(center: Vector2, radius: float) -> Unit:
 	var parent := get_parent()
