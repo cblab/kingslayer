@@ -56,6 +56,11 @@ var _rng := RandomNumberGenerator.new()
 var _ruler_search_timer: float = 0.0
 var _ruler_search_point: Vector2 = Vector2.ZERO
 var _has_ruler_search_point: bool = false
+var _current_search_target: Vector2 = Vector2.ZERO
+var _has_active_search_order: bool = false
+var _next_search_decision_time: float = 0.0
+var _ruler_search_stuck_timer: float = 0.0
+var _last_search_distance: float = INF
 var _disband_cooldown_active: bool = false
 var _disband_cooldown_timer: float = 0.0
 var _guard_return_logged: bool = false
@@ -68,6 +73,8 @@ const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_2.mp3"),
 	preload("res://scripts/sound/sword_clash_3.mp3"),
 ]
+const _RULER_SEARCH_STUCK_TIMEOUT: float = 1.4
+const _RULER_SEARCH_STUCK_DELTA_EPSILON: float = 3.0
 
 @onready var _visual: Polygon2D = $Visual
 @onready var _ruler_marker: Node2D = $RulerMarker
@@ -160,6 +167,10 @@ func set_attack_target(target: Unit, reason: String = "") -> void:
 		next_target = target
 
 	_attack_target = next_target
+	if _attack_target != null:
+		_has_active_search_order = false
+		_has_ruler_search_point = false
+		_ruler_search_stuck_timer = 0.0
 	if _attack_target == null:
 		_guard_return_logged = false
 	if previous_target == _attack_target:
@@ -417,27 +428,77 @@ func _update_ruler_aggro_target() -> void:
 	if nearest_enemy != null:
 		set_attack_target(nearest_enemy, "ruler_enemy_spotted")
 		_has_ruler_search_point = false
+		_has_active_search_order = false
+		_ruler_search_stuck_timer = 0.0
 
 func _process_ruler_search_movement(delta: float) -> void:
+	if _attack_target != null:
+		return
+
 	_ruler_search_timer -= delta
+	_next_search_decision_time = maxf(0.0, _next_search_decision_time - delta)
 
-	if _has_ruler_search_point:
-		if global_position.distance_to(_ruler_search_point) <= waypoint_tolerance + 6.0:
-			_has_ruler_search_point = false
-			_path = PackedVector2Array()
-			_path_index = 0
+	var reached_target := false
+	var target_invalid := false
+	var stuck_timeout := false
 
-	if _ruler_search_timer <= 0.0 or not _has_ruler_search_point:
+	if _has_active_search_order:
+		reached_target = global_position.distance_to(_current_search_target) <= waypoint_tolerance + 6.0
+		target_invalid = not _is_search_target_valid(_current_search_target)
+
+		var current_distance := global_position.distance_to(_current_search_target)
+		var distance_delta := _last_search_distance - current_distance
+		if _path_index < _path.size() and not reached_target:
+			if distance_delta <= _RULER_SEARCH_STUCK_DELTA_EPSILON:
+				_ruler_search_stuck_timer += delta
+			else:
+				_ruler_search_stuck_timer = 0.0
+		else:
+			_ruler_search_stuck_timer = 0.0
+		_last_search_distance = current_distance
+		stuck_timeout = _ruler_search_stuck_timer >= _RULER_SEARCH_STUCK_TIMEOUT
+
+	if reached_target or target_invalid or stuck_timeout:
+		_has_active_search_order = false
+		_has_ruler_search_point = false
+		_path = PackedVector2Array()
+		_path_index = 0
+
+	var has_active_path := _path_index < _path.size()
+	var should_pick_new_target := not _has_active_search_order \
+		or not has_active_path \
+		or reached_target \
+		or target_invalid \
+		or stuck_timeout \
+		or _next_search_decision_time <= 0.0
+
+	if should_pick_new_target:
 		_ruler_search_point = _pick_ruler_search_point()
 		_has_ruler_search_point = true
+		_current_search_target = _ruler_search_point
+		_has_active_search_order = true
+		_ruler_search_stuck_timer = 0.0
+		_last_search_distance = global_position.distance_to(_current_search_target)
 		_repath_to(_ruler_search_point)
 		_ruler_search_timer = _rng.randf_range(ruler_search_move_interval_min, ruler_search_move_interval_max)
+		_next_search_decision_time = _ruler_search_timer
 		_log_event("RULER_SEARCH_MOVE", {
 			"ruler": name,
 			"target_point": _ruler_search_point,
 		})
 
 	_follow_current_path()
+
+func _is_search_target_valid(target_point: Vector2) -> bool:
+	var world: Node = get_parent()
+	if world == null:
+		return true
+	if world.has_method("is_valid_ruler_search_point"):
+		return world.is_valid_ruler_search_point(global_position, target_point)
+	if world.has_method("get_clamped_ruler_search_point"):
+		var clamped := world.get_clamped_ruler_search_point(global_position, target_point, target_point)
+		return clamped.distance_to(target_point) <= 1.0
+	return true
 
 func _pick_ruler_search_point() -> Vector2:
 	var world: Node = get_parent()
@@ -617,4 +678,9 @@ func _clear_active_combat_and_navigation_state(reason: String = "") -> void:
 	_has_ruler_search_point = false
 	_ruler_search_point = global_position
 	_ruler_search_timer = 0.0
+	_has_active_search_order = false
+	_current_search_target = global_position
+	_next_search_decision_time = 0.0
+	_ruler_search_stuck_timer = 0.0
+	_last_search_distance = INF
 	_guard_return_logged = false

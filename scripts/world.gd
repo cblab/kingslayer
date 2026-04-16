@@ -85,6 +85,11 @@ func get_clamped_ruler_search_point(from_position: Vector2, desired_point: Vecto
 
 	return _clamp_to_ruler_search_bounds(from_position)
 
+func is_valid_ruler_search_point(from_position: Vector2, point: Vector2) -> bool:
+	if not ruler_search_bounds.has_point(point):
+		return false
+	return _is_point_navigable_from(from_position, point)
+
 func on_ruler_attacked(ruler: Unit, attacker: Unit) -> void:
 	if not _is_valid_live_unit(ruler):
 		return
@@ -339,6 +344,13 @@ func _spawn_free_knight_at_next_point() -> void:
 
 	var spawn_point := periodic_free_knight_spawn_points[_spawn_sequence_index % periodic_free_knight_spawn_points.size()]
 	_spawn_sequence_index += 1
+	var validated_spawn_point := _resolve_valid_spawn_point(spawn_point)
+	if validated_spawn_point == Vector2.INF:
+		log_event("FREE_KNIGHT_SPAWN_SKIPPED", {
+			"reason": "invalid_spawn_point",
+			"source_point": spawn_point,
+		})
+		return
 
 	var spawned_node := _FREE_KNIGHT_SCENE.instantiate()
 	if not (spawned_node is Unit):
@@ -351,10 +363,40 @@ func _spawn_free_knight_at_next_point() -> void:
 	spawned_unit.is_player_controlled = false
 	spawned_unit.faction_id = -1
 	add_child(spawned_unit)
-	spawned_unit.global_position = _clamp_to_ruler_search_bounds(spawn_point)
+	spawned_unit.global_position = validated_spawn_point
 	spawned_unit.set_role(Unit.UnitRole.FREE_KNIGHT)
 
 	log_event("FREE_KNIGHT_SPAWNED", {
 		"unit": spawned_unit.name,
 		"point": spawned_unit.global_position,
 	})
+
+func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
+	var clamped_point := _clamp_to_ruler_search_bounds(raw_spawn_point)
+	if _is_point_navigable(clamped_point):
+		return clamped_point
+
+	var nearby_candidate := _find_navigable_spawn_nearby_point(clamped_point)
+	if nearby_candidate != Vector2.INF:
+		return nearby_candidate
+
+	return Vector2.INF
+
+func _is_point_navigable(point: Vector2) -> bool:
+	var nav_map := get_world_2d().navigation_map
+	var closest_point := NavigationServer2D.map_get_closest_point(nav_map, point)
+	if closest_point == Vector2.INF:
+		return false
+	return closest_point.distance_to(point) <= 72.0
+
+func _find_navigable_spawn_nearby_point(center_point: Vector2) -> Vector2:
+	var probe_distances: Array[float] = [40.0, 90.0, 150.0, 220.0]
+	var direction_count := 8
+	for distance in probe_distances:
+		for index in direction_count:
+			var angle := (TAU / float(direction_count)) * float(index)
+			var offset := Vector2.RIGHT.rotated(angle) * distance
+			var candidate := _clamp_to_ruler_search_bounds(center_point + offset)
+			if _is_point_navigable(candidate):
+				return candidate
+	return Vector2.INF
