@@ -207,7 +207,10 @@ func set_role(new_role: UnitRole) -> void:
 	if role != UnitRole.ROYAL_GUARD:
 		ruler_path = NodePath()
 	guard_slot_index = 0
-	_apply_role_visuals()
+	if is_node_ready():
+		_apply_role_visuals()
+	else:
+		call_deferred("_apply_role_visuals")
 
 func assign_guard_to_ruler(ruler: Unit, slot_index: int = 0) -> void:
 	if _is_dead:
@@ -302,16 +305,27 @@ func _get_guard_hold_position(ruler: Unit) -> Vector2:
 	return ruler.global_position + offset
 
 func _apply_role_visuals() -> void:
+	if _visual == null:
+		_visual = get_node_or_null("Visual") as Polygon2D
+	if _ruler_marker == null:
+		_ruler_marker = get_node_or_null("RulerMarker") as Node2D
+	if _visual == null:
+		push_warning("Unit '%s': Missing Visual node, skipping role visuals." % name)
+		return
+
 	match role:
 		UnitRole.RULER:
 			_visual.color = faction_color.lightened(0.2)
-			_ruler_marker.visible = true
+			if _ruler_marker != null:
+				_ruler_marker.visible = true
 		UnitRole.ROYAL_GUARD:
 			_visual.color = faction_color.darkened(0.1)
-			_ruler_marker.visible = false
+			if _ruler_marker != null:
+				_ruler_marker.visible = false
 		_:
 			_visual.color = free_knight_color
-			_ruler_marker.visible = false
+			if _ruler_marker != null:
+				_ruler_marker.visible = false
 
 func _process_attack_target(delta: float) -> void:
 	if not is_instance_valid(_attack_target) or _attack_target.is_dead() or not _is_enemy(_attack_target):

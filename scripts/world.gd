@@ -348,11 +348,11 @@ func _spawn_free_knight_at_next_point() -> void:
 
 	var spawned_unit: Unit = spawned_node
 	spawned_unit.name = "SpawnedFreeKnight_%d" % Time.get_ticks_msec()
-	spawned_unit.global_position = _clamp_to_ruler_search_bounds(spawn_point)
 	spawned_unit.is_player_controlled = false
-	spawned_unit.set_role(Unit.UnitRole.FREE_KNIGHT)
 	spawned_unit.faction_id = -1
 	add_child(spawned_unit)
+	spawned_unit.global_position = _clamp_to_ruler_search_bounds(spawn_point)
+	spawned_unit.set_role(Unit.UnitRole.FREE_KNIGHT)
 
 	log_event("FREE_KNIGHT_SPAWNED", {
 		"unit": spawned_unit.name,
