@@ -74,6 +74,12 @@ var _search_goal_invalid_logged: bool = false
 var _guard_follow_reacquire_cooldown: float = 0.0
 var _last_guard_follow_point: Vector2 = Vector2.INF
 var _guard_follow_close_enough: bool = false
+var _last_local_progress_position: Vector2 = Vector2.INF
+var _local_stuck_timer: float = 0.0
+var _local_escape_active: bool = false
+var _local_escape_target: Vector2 = Vector2.ZERO
+var _local_escape_cooldown: float = 0.0
+var _local_escape_latch: bool = false
 var _death_cleanup_scheduled: bool = false
 var _queued_attack_animation: bool = false
 
@@ -101,6 +107,11 @@ const _GUARD_FOLLOW_REACQUIRE_DISTANCE: float = 40.0
 const _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE: float = 18.0
 const _GUARD_FOLLOW_POINT_MOVE_THRESHOLD: float = 12.0
 const _GUARD_FOLLOW_CATCHUP_DISTANCE: float = 110.0
+const _LOCAL_STUCK_TIMEOUT: float = 0.72
+const _LOCAL_STUCK_PROGRESS_EPSILON: float = 4.0
+const _LOCAL_ESCAPE_STEP_DISTANCE: float = 58.0
+const _LOCAL_ESCAPE_REACHED_EPSILON: float = 10.0
+const _LOCAL_ESCAPE_COOLDOWN: float = 1.0
 const _BODY_SPRITE_VISUAL_SCALE := Vector2(1.5, 1.5)
 const _BODY_SPRITE_VISUAL_POSITION := Vector2(0.0, 12.0)
 const _RULER_MARKER_VISUAL_POSITION := Vector2(0.0, -8.0)
@@ -408,8 +419,12 @@ func _process_guard_follow(_delta: float, ruler: Unit) -> void:
 	_guard_follow_reacquire_cooldown = 0.0
 
 	if _guard_follow_close_enough:
+		_reset_local_unstuck_progress()
 		velocity = Vector2.ZERO
 		move_and_slide()
+		return
+
+	if _process_local_unstuck(_delta, follow_point, true):
 		return
 
 	var direction := global_position.direction_to(follow_point)
@@ -613,6 +628,9 @@ func _process_ruler_search_movement(delta: float) -> void:
 		elif _next_search_decision_time <= 0.0:
 			_next_search_decision_time = _rng.randf_range(0.35, 0.8)
 
+	if _has_active_search_order and _process_local_unstuck(delta, _current_search_target, true, true):
+		return
+
 	_follow_current_path()
 
 func _is_search_target_valid(target_point: Vector2) -> bool:
@@ -659,6 +677,96 @@ func _try_pick_ruler_search_point(previous_target: Vector2 = Vector2.ZERO) -> bo
 	_last_valid_ruler_search_point = next_goal
 	_search_goal_invalid_logged = false
 	return true
+
+func _process_local_unstuck(
+	delta: float,
+	target_point: Vector2,
+	has_active_goal: bool,
+	repath_after_escape: bool = false
+) -> bool:
+	if _local_escape_cooldown > 0.0:
+		_local_escape_cooldown = maxf(0.0, _local_escape_cooldown - delta)
+
+	if not has_active_goal or _attack_target != null:
+		_reset_local_unstuck_progress()
+		return false
+
+	if _local_escape_active:
+		var escape_distance := global_position.distance_to(_local_escape_target)
+		if escape_distance <= _LOCAL_ESCAPE_REACHED_EPSILON:
+			_local_escape_active = false
+			_local_stuck_timer = 0.0
+			_last_local_progress_position = global_position
+			if repath_after_escape:
+				_repath_to(target_point)
+			return false
+		var escape_direction := global_position.direction_to(_local_escape_target)
+		velocity = escape_direction * move_speed
+		move_and_slide()
+		return true
+
+	var goal_distance := global_position.distance_to(target_point)
+	if goal_distance <= waypoint_tolerance + 6.0:
+		_reset_local_unstuck_progress()
+		return false
+
+	if _last_local_progress_position == Vector2.INF:
+		_last_local_progress_position = global_position
+		return false
+
+	var moved_distance := global_position.distance_to(_last_local_progress_position)
+	_last_local_progress_position = global_position
+	if moved_distance <= _LOCAL_STUCK_PROGRESS_EPSILON:
+		_local_stuck_timer += delta
+	else:
+		_local_stuck_timer = 0.0
+		_local_escape_latch = false
+
+	if _local_escape_latch or _local_escape_cooldown > 0.0 or _local_stuck_timer < _LOCAL_STUCK_TIMEOUT:
+		return false
+
+	if _start_local_escape_step(target_point):
+		_local_escape_latch = true
+		if repath_after_escape:
+			_path = PackedVector2Array()
+			_path_index = 0
+		return true
+	return false
+
+func _start_local_escape_step(target_point: Vector2) -> bool:
+	var to_target := target_point - global_position
+	if to_target.length_squared() <= 1.0:
+		return false
+
+	var forward := to_target.normalized()
+	var side := Vector2(-forward.y, forward.x)
+	if _rng.randf() < 0.5:
+		side = -side
+
+	var escape_target := global_position + side * _LOCAL_ESCAPE_STEP_DISTANCE
+	if role == UnitRole.RULER:
+		var world: Node = get_parent()
+		if world != null and world.has_method("get_clamped_ruler_search_point"):
+			escape_target = world.get_clamped_ruler_search_point(global_position, escape_target, target_point)
+	if global_position.distance_to(escape_target) < _LOCAL_ESCAPE_REACHED_EPSILON:
+		return false
+
+	_local_escape_target = escape_target
+	_local_escape_active = true
+	_local_escape_cooldown = _LOCAL_ESCAPE_COOLDOWN
+	_local_stuck_timer = 0.0
+	_log_event("UNIT_UNSTUCK_ESCAPE", {
+		"unit": name,
+		"role": _role_to_text(role),
+		"escape_target": _local_escape_target,
+	})
+	return true
+
+func _reset_local_unstuck_progress() -> void:
+	_last_local_progress_position = Vector2.INF
+	_local_stuck_timer = 0.0
+	_local_escape_active = false
+	_local_escape_latch = false
 
 func _update_guard_aggro_target() -> void:
 	var ruler := _get_ruler()
@@ -928,3 +1036,6 @@ func _clear_active_combat_and_navigation_state(reason: String = "") -> void:
 	_guard_follow_reacquire_cooldown = 0.0
 	_last_guard_follow_point = Vector2.INF
 	_guard_follow_close_enough = false
+	_reset_local_unstuck_progress()
+	_local_escape_target = Vector2.ZERO
+	_local_escape_cooldown = 0.0
