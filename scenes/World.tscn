@@ -13,7 +13,7 @@ color = Color(0.9, 0.9, 0.9, 1)
 polygon = PackedVector2Array(-1400, -1300, 3600, -1300, 3600, 2600, -1400, 2600)
 
 [node name="PlayerUnit" parent="." instance=ExtResource("2_unit_scene")]
-position = Vector2(220, 520)
+position = Vector2(-1000, 2000)
 role = 0
 faction_id = -1
 free_knight_color = Color(0.45, 0.52, 0.62, 1)
@@ -148,15 +148,6 @@ polygon = PackedVector2Array(1700, 280, 2050, 340, 2200, 700, 2040, 1020, 1710, 
 
 [node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerEastRidge"]
 polygon = PackedVector2Array(1700, 280, 2050, 340, 2200, 700, 2040, 1020, 1710, 930, 1600, 560)
-
-[node name="BlockerCenterSpur" type="StaticBody2D" parent="Blockers"]
-
-[node name="Visual" type="Polygon2D" parent="Blockers/BlockerCenterSpur"]
-color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(520, 360, 860, 360, 940, 560, 730, 760, 520, 640, 450, 500)
-
-[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerCenterSpur"]
-polygon = PackedVector2Array(520, 360, 860, 360, 940, 560, 730, 760, 520, 640, 450, 500)
 
 [node name="DebugHud" type="CanvasLayer" parent="."]
 layer = 10
