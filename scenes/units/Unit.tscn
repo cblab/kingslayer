@@ -9,8 +9,12 @@ radius = 18.0
 script = ExtResource("1")
 
 [node name="Visual" type="Polygon2D" parent="."]
+visible = false
 color = Color(0.2, 0.35, 0.85, 1)
 polygon = PackedVector2Array(0, -22, 16, -6, 12, 20, -12, 20, -16, -6)
+
+[node name="BodySprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, 20)
 
 [node name="RulerMarker" type="Polygon2D" parent="."]
 visible = false

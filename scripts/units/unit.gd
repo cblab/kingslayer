@@ -74,12 +74,23 @@ var _search_goal_invalid_logged: bool = false
 var _guard_follow_reacquire_cooldown: float = 0.0
 var _last_guard_follow_point: Vector2 = Vector2.INF
 var _guard_follow_close_enough: bool = false
+var _death_cleanup_scheduled: bool = false
+var _queued_attack_animation: bool = false
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
 	preload("res://scripts/sound/sword_clash_2.mp3"),
 	preload("res://scripts/sound/sword_clash_3.mp3"),
 ]
+const _KNIGHT_IDLE_PATH := "res://assets/sprites/knight/IDLE.png"
+const _KNIGHT_WALK_PATH := "res://assets/sprites/knight/WALK.png"
+const _KNIGHT_ATTACK_PATH := "res://assets/sprites/knight/ATTACK 1.png"
+const _KNIGHT_DEATH_PATH := "res://assets/sprites/knight/DEATH.png"
+const _ANIM_IDLE := "idle"
+const _ANIM_WALK := "walk"
+const _ANIM_ATTACK := "attack"
+const _ANIM_DEATH := "death"
+const _WALK_VELOCITY_EPSILON := 8.0
 const _RULER_SEARCH_STUCK_TIMEOUT: float = 1.4
 const _RULER_SEARCH_STUCK_DELTA_EPSILON: float = 3.0
 const _RULER_SEARCH_MIN_TARGET_DISTANCE: float = 96.0
@@ -92,14 +103,17 @@ const _GUARD_FOLLOW_POINT_MOVE_THRESHOLD: float = 12.0
 const _GUARD_FOLLOW_CATCHUP_DISTANCE: float = 110.0
 
 @onready var _visual: Polygon2D = $Visual
+@onready var _body_sprite: AnimatedSprite2D = $BodySprite
 @onready var _ruler_marker: Node2D = $RulerMarker
 @onready var _hit_audio: AudioStreamPlayer2D = $HitAudio
 
 func _ready() -> void:
 	_rng.randomize()
+	_setup_knight_sprite_frames()
 	max_hp = _resolve_initial_max_hp()
 	current_hp = max_hp
 	_apply_role_visuals()
+	_update_animation_state()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_player_controlled or _is_dead:
@@ -125,6 +139,7 @@ func _physics_process(delta: float) -> void:
 	if _is_dead:
 		velocity = Vector2.ZERO
 		move_and_slide()
+		_update_animation_state()
 		return
 
 	if _guard_target_reacquire_timer > 0.0:
@@ -149,6 +164,8 @@ func _physics_process(delta: float) -> void:
 		_process_ruler_search_movement(delta)
 	else:
 		_follow_current_path()
+
+	_update_animation_state()
 
 func take_damage(amount: float, attacker: Unit) -> void:
 	if _is_dead:
@@ -399,23 +416,27 @@ func _process_guard_follow(_delta: float, ruler: Unit) -> void:
 func _apply_role_visuals() -> void:
 	if _visual == null:
 		_visual = get_node_or_null("Visual") as Polygon2D
+	if _body_sprite == null:
+		_body_sprite = get_node_or_null("BodySprite") as AnimatedSprite2D
 	if _ruler_marker == null:
 		_ruler_marker = get_node_or_null("RulerMarker") as Node2D
-	if _visual == null:
-		push_warning("Unit '%s': Missing Visual node, skipping role visuals." % name)
+	if _visual != null:
+		_visual.visible = false
+	if _body_sprite == null:
+		push_warning("Unit '%s': Missing BodySprite node, skipping role visuals." % name)
 		return
 
 	match role:
 		UnitRole.RULER:
-			_visual.color = faction_color.lightened(0.2)
+			_body_sprite.modulate = faction_color.lightened(0.35)
 			if _ruler_marker != null:
 				_ruler_marker.visible = true
 		UnitRole.ROYAL_GUARD:
-			_visual.color = faction_color.darkened(0.1)
+			_body_sprite.modulate = faction_color.darkened(0.1)
 			if _ruler_marker != null:
 				_ruler_marker.visible = false
 		_:
-			_visual.color = free_knight_color
+			_body_sprite.modulate = free_knight_color
 			if _ruler_marker != null:
 				_ruler_marker.visible = false
 
@@ -442,6 +463,7 @@ func _process_attack_target(delta: float) -> void:
 
 	_attack_cooldown -= delta
 	if _attack_cooldown <= 0.0:
+		_queued_attack_animation = true
 		var attacked_unit := _attack_target
 		attacked_unit.take_damage(attack_damage, self)
 		if attacked_unit != null and is_instance_valid(attacked_unit):
@@ -746,6 +768,84 @@ func _find_clicked_unit() -> Unit:
 
 	return null
 
+func _setup_knight_sprite_frames() -> void:
+	if _body_sprite == null:
+		return
+
+	var frames := SpriteFrames.new()
+	_add_strip_animation(frames, _ANIM_IDLE, _KNIGHT_IDLE_PATH, 7, true, 10.0)
+	_add_strip_animation(frames, _ANIM_WALK, _KNIGHT_WALK_PATH, 8, true, 12.0)
+	_add_strip_animation(frames, _ANIM_ATTACK, _KNIGHT_ATTACK_PATH, 6, false, 14.0)
+	_add_strip_animation(frames, _ANIM_DEATH, _KNIGHT_DEATH_PATH, 12, false, 12.0)
+	_body_sprite.sprite_frames = frames
+	if frames.has_animation(_ANIM_IDLE):
+		_body_sprite.play(_ANIM_IDLE)
+
+func _add_strip_animation(
+	frames: SpriteFrames,
+	animation_name: StringName,
+	texture_path: String,
+	frame_count: int,
+	looping: bool,
+	fps: float
+) -> void:
+	var strip_texture := load(texture_path) as Texture2D
+	if strip_texture == null:
+		push_warning("Unit '%s': Missing sprite strip '%s'." % [name, texture_path])
+		return
+	if frame_count <= 0:
+		return
+
+	var strip_size := strip_texture.get_size()
+	var frame_width := int(strip_size.x) / frame_count
+	var frame_height := int(strip_size.y)
+	if frame_width <= 0 or frame_height <= 0:
+		return
+
+	frames.add_animation(animation_name)
+	frames.set_animation_loop(animation_name, looping)
+	frames.set_animation_speed(animation_name, fps)
+
+	for i in frame_count:
+		var atlas := AtlasTexture.new()
+		atlas.atlas = strip_texture
+		atlas.region = Rect2(i * frame_width, 0, frame_width, frame_height)
+		frames.add_frame(animation_name, atlas)
+
+func _update_animation_state() -> void:
+	if _body_sprite == null or _body_sprite.sprite_frames == null:
+		return
+
+	if _is_dead:
+		_play_animation(_ANIM_DEATH)
+		return
+
+	if _queued_attack_animation and _attack_target != null:
+		if _play_animation(_ANIM_ATTACK):
+			_queued_attack_animation = false
+			return
+
+	if _body_sprite.animation == _ANIM_ATTACK and _body_sprite.is_playing():
+		return
+
+	var moving := velocity.length() > _WALK_VELOCITY_EPSILON and (_path_index < _path.size() or _attack_target != null or role == UnitRole.ROYAL_GUARD)
+	if moving:
+		_play_animation(_ANIM_WALK)
+	else:
+		_play_animation(_ANIM_IDLE)
+
+func _play_animation(animation_name: StringName) -> bool:
+	if _body_sprite == null or _body_sprite.sprite_frames == null:
+		return false
+	if not _body_sprite.sprite_frames.has_animation(animation_name):
+		return false
+	if _body_sprite.animation != animation_name:
+		_body_sprite.play(animation_name)
+		return true
+	if not _body_sprite.is_playing():
+		_body_sprite.play(animation_name)
+	return true
+
 func _die() -> void:
 	if _is_dead:
 		return
@@ -761,8 +861,29 @@ func _die() -> void:
 		var world: Node = get_parent()
 		if world != null and world.has_method("on_ruler_died"):
 			world.on_ruler_died(self, get_last_valid_attacker(), role_at_death)
+	_clear_active_combat_and_navigation_state("death")
+	_queued_attack_animation = false
+	_schedule_death_cleanup()
 
-	queue_free()
+func _schedule_death_cleanup() -> void:
+	if _death_cleanup_scheduled:
+		return
+	_death_cleanup_scheduled = true
+
+	var death_duration := 0.35
+	if _body_sprite != null and _body_sprite.sprite_frames != null and _body_sprite.sprite_frames.has_animation(_ANIM_DEATH):
+		var frame_count := _body_sprite.sprite_frames.get_frame_count(_ANIM_DEATH)
+		var fps := _body_sprite.sprite_frames.get_animation_speed(_ANIM_DEATH)
+		if frame_count > 0 and fps > 0.0:
+			death_duration = maxf(0.2, float(frame_count) / fps)
+	_play_animation(_ANIM_DEATH)
+
+	var timer := get_tree().create_timer(death_duration)
+	timer.timeout.connect(_on_death_cleanup_timeout, CONNECT_ONE_SHOT)
+
+func _on_death_cleanup_timeout() -> void:
+	if is_inside_tree():
+		queue_free()
 
 func _log_event(event_type: String, data: Dictionary) -> void:
 	var world: Node = get_parent()
