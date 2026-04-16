@@ -71,6 +71,9 @@ var _guard_target_switch_timer: float = 0.0
 var _last_valid_ruler_search_point: Vector2 = Vector2.ZERO
 var _next_search_retry_time: float = 0.0
 var _search_goal_invalid_logged: bool = false
+var _guard_follow_reacquire_cooldown: float = 0.0
+var _last_guard_follow_point: Vector2 = Vector2.INF
+var _guard_follow_close_enough: bool = false
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -82,6 +85,10 @@ const _RULER_SEARCH_STUCK_DELTA_EPSILON: float = 3.0
 const _RULER_SEARCH_MIN_TARGET_DISTANCE: float = 96.0
 const _RULER_SEARCH_GOAL_DUPLICATE_EPSILON: float = 12.0
 const SEARCH_RETRY_COOLDOWN := 1.0
+const _GUARD_FOLLOW_REACQUIRE_INTERVAL: float = 0.20
+const _GUARD_FOLLOW_REACQUIRE_DISTANCE: float = 70.0
+const _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE: float = 28.0
+const _GUARD_FOLLOW_POINT_MOVE_THRESHOLD: float = 24.0
 
 
 @onready var _visual: Polygon2D = $Visual
@@ -240,6 +247,9 @@ func assign_guard_to_ruler(ruler: Unit, slot_index: int = 0) -> void:
 	role = UnitRole.ROYAL_GUARD
 	ruler_path = get_path_to(ruler)
 	guard_slot_index = slot_index
+	_guard_follow_reacquire_cooldown = 0.0
+	_last_guard_follow_point = Vector2.INF
+	_guard_follow_close_enough = false
 	faction_id = ruler.faction_id
 	kingdom_id = ruler.kingdom_id
 	team_id = ruler.team_id
@@ -250,6 +260,9 @@ func clear_guard_assignment() -> void:
 	_attack_target = null
 	_path = PackedVector2Array()
 	_path_index = 0
+	_guard_follow_reacquire_cooldown = 0.0
+	_last_guard_follow_point = Vector2.INF
+	_guard_follow_close_enough = false
 	set_role(UnitRole.FREE_KNIGHT)
 	reset_free_knight_identity()
 	ruler_path = NodePath()
@@ -290,6 +303,9 @@ func is_disband_cooldown_active() -> bool:
 func _process_guard_logic(delta: float) -> void:
 	var ruler := _get_ruler()
 	if ruler == null:
+		_log_event("GUARD_LOST_RULER_REF", {
+			"guard": name,
+		})
 		clear_guard_assignment()
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -312,17 +328,7 @@ func _process_guard_logic(delta: float) -> void:
 			_process_attack_target(delta)
 			return
 
-	var hold_position := _get_guard_hold_position(ruler)
-	if global_position.distance_to(hold_position) <= guard_return_distance:
-		velocity = Vector2.ZERO
-		move_and_slide()
-		return
-
-	_repath_cooldown -= delta
-	if _repath_cooldown <= 0.0:
-		_repath_to(hold_position)
-		_repath_cooldown = 0.35
-	_follow_current_path()
+	_process_guard_follow(delta, ruler)
 
 func _resolve_initial_max_hp() -> float:
 	if is_player_controlled:
@@ -343,6 +349,43 @@ func _get_guard_hold_position(ruler: Unit) -> Vector2:
 	var angle := PI * 0.5 * float(guard_slot_index)
 	var offset := Vector2.RIGHT.rotated(angle) * guard_hold_radius
 	return ruler.global_position + offset
+
+func _get_guard_follow_point_for_ruler(ruler: Unit) -> Vector2:
+	return _get_guard_hold_position(ruler)
+
+func _process_guard_follow(delta: float, ruler: Unit) -> void:
+	if role != UnitRole.ROYAL_GUARD or _attack_target != null or _disband_cooldown_active:
+		return
+
+	var follow_point := _get_guard_follow_point_for_ruler(ruler)
+	var distance_to_follow_point := global_position.distance_to(follow_point)
+	if distance_to_follow_point < _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE:
+		_guard_follow_close_enough = true
+	elif distance_to_follow_point > _GUARD_FOLLOW_REACQUIRE_DISTANCE:
+		_guard_follow_close_enough = false
+
+	_guard_follow_reacquire_cooldown = maxf(0.0, _guard_follow_reacquire_cooldown - delta)
+	var should_reacquire := false
+	if _guard_follow_reacquire_cooldown <= 0.0:
+		var has_last_follow_point := _last_guard_follow_point != Vector2.INF
+		var follow_point_shift := INF
+		if has_last_follow_point:
+			follow_point_shift = follow_point.distance_to(_last_guard_follow_point)
+		should_reacquire = not has_last_follow_point \
+			or distance_to_follow_point > _GUARD_FOLLOW_REACQUIRE_DISTANCE \
+			or follow_point_shift > _GUARD_FOLLOW_POINT_MOVE_THRESHOLD
+
+	if should_reacquire and not _guard_follow_close_enough:
+		_repath_to(follow_point)
+		_last_guard_follow_point = follow_point
+		_guard_follow_reacquire_cooldown = _GUARD_FOLLOW_REACQUIRE_INTERVAL
+
+	if _guard_follow_close_enough and _path_index >= _path.size():
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+
+	_follow_current_path()
 
 func _apply_role_visuals() -> void:
 	if _visual == null:
@@ -744,3 +787,6 @@ func _clear_active_combat_and_navigation_state(reason: String = "") -> void:
 	_ruler_search_stuck_timer = 0.0
 	_last_search_distance = INF
 	_guard_return_logged = false
+	_guard_follow_reacquire_cooldown = 0.0
+	_last_guard_follow_point = Vector2.INF
+	_guard_follow_close_enough = false
