@@ -25,6 +25,7 @@ const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 const _SPAWN_POINT_DUPLICATE_EPSILON: float = 8.0
 const _SPAWN_POINT_MIN_SPACING: float = 120.0
 const _SPAWN_POINT_MIN_POOL_SIZE: int = 3
+const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
 
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
@@ -95,6 +96,45 @@ func is_valid_ruler_search_point(from_position: Vector2, point: Vector2) -> bool
 	if not ruler_search_bounds.has_point(point):
 		return false
 	return _is_point_navigable_from(from_position, point)
+
+func try_get_valid_ruler_search_point(from_pos: Vector2, min_dist: float, max_attempts := 8) -> Dictionary:
+	if max_attempts <= 0:
+		return {"ok": false}
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var sampled_points: Array[Vector2] = []
+	var max_x := ruler_search_bounds.position.x + ruler_search_bounds.size.x
+	var max_y := ruler_search_bounds.position.y + ruler_search_bounds.size.y
+
+	for attempt in max_attempts:
+		var raw_point := Vector2(
+			rng.randf_range(ruler_search_bounds.position.x, max_x),
+			rng.randf_range(ruler_search_bounds.position.y, max_y)
+		)
+		var candidate := get_clamped_ruler_search_point(from_pos, raw_point, from_pos)
+		if not ruler_search_bounds.has_point(candidate):
+			continue
+		if not is_valid_ruler_search_point(from_pos, candidate):
+			continue
+		if candidate.distance_to(from_pos) < min_dist:
+			continue
+
+		var is_duplicate := false
+		for sampled in sampled_points:
+			if sampled.distance_to(candidate) <= _RULER_SEARCH_POINT_DUPLICATE_EPSILON:
+				is_duplicate = true
+				break
+		if is_duplicate:
+			continue
+
+		sampled_points.append(candidate)
+		return {
+			"ok": true,
+			"point": candidate,
+		}
+
+	return {"ok": false}
 
 func on_ruler_attacked(ruler: Unit, attacker: Unit) -> void:
 	if not _is_valid_live_unit(ruler):

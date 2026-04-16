@@ -67,6 +67,8 @@ var _guard_return_logged: bool = false
 var _guard_target_reacquire_timer: float = 0.0
 var _guard_target_switch_timer: float = 0.0
 var _last_valid_ruler_search_point: Vector2 = Vector2.ZERO
+var _next_search_retry_time: float = 0.0
+var _search_goal_invalid_logged: bool = false
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -77,7 +79,7 @@ const _RULER_SEARCH_STUCK_TIMEOUT: float = 1.4
 const _RULER_SEARCH_STUCK_DELTA_EPSILON: float = 3.0
 const _RULER_SEARCH_MIN_TARGET_DISTANCE: float = 96.0
 const _RULER_SEARCH_GOAL_DUPLICATE_EPSILON: float = 12.0
-const _RULER_SEARCH_PICK_ATTEMPTS: int = 12
+const SEARCH_RETRY_COOLDOWN := 1.0
 
 
 @onready var _visual: Polygon2D = $Visual
@@ -439,6 +441,10 @@ func _process_ruler_search_movement(delta: float) -> void:
 	if _attack_target != null:
 		return
 
+	var now := Time.get_ticks_msec() / 1000.0
+	if now >= _next_search_retry_time:
+		_search_goal_invalid_logged = false
+
 	_next_search_decision_time = maxf(0.0, _next_search_decision_time - delta)
 
 	var reached_target := false
@@ -473,26 +479,33 @@ func _process_ruler_search_movement(delta: float) -> void:
 		or _next_search_decision_time <= 0.0
 
 	if should_pick_new_target:
-		var previous_goal := _current_search_target
-		var next_goal := _pick_ruler_search_point(previous_goal)
-		if next_goal != Vector2.INF:
-			_has_ruler_search_point = true
-			_current_search_target = next_goal
-			_ruler_search_point = next_goal
-			_has_active_search_order = true
-			_ruler_search_stuck_timer = 0.0
-			_last_search_distance = global_position.distance_to(_current_search_target)
-			_repath_to(_ruler_search_point)
-			_ruler_search_timer = _rng.randf_range(ruler_search_move_interval_min, ruler_search_move_interval_max)
-			_next_search_decision_time = _ruler_search_timer
-			if previous_goal == Vector2.ZERO or previous_goal.distance_to(next_goal) > _RULER_SEARCH_GOAL_DUPLICATE_EPSILON:
-				_log_event("RULER_SEARCH_MOVE", {
-					"ruler": name,
-					"target_point": next_goal,
-				})
-		else:
-			if _next_search_decision_time <= 0.0:
-				_next_search_decision_time = _rng.randf_range(0.35, 0.8)
+		if now >= _next_search_retry_time:
+			var previous_goal := _current_search_target
+			if _try_pick_ruler_search_point(previous_goal):
+				_has_ruler_search_point = true
+				_has_active_search_order = true
+				_ruler_search_stuck_timer = 0.0
+				_last_search_distance = global_position.distance_to(_current_search_target)
+				_repath_to(_ruler_search_point)
+				_ruler_search_timer = _rng.randf_range(ruler_search_move_interval_min, ruler_search_move_interval_max)
+				_next_search_decision_time = _ruler_search_timer
+				if previous_goal == Vector2.ZERO or previous_goal.distance_to(_current_search_target) > _RULER_SEARCH_GOAL_DUPLICATE_EPSILON:
+					_log_event("RULER_SEARCH_MOVE", {
+						"ruler": name,
+						"target_point": _current_search_target,
+					})
+			else:
+				_next_search_retry_time = now + SEARCH_RETRY_COOLDOWN
+				if not _search_goal_invalid_logged:
+					_log_event("RULER_SEARCH_GOAL_INVALID", {
+						"ruler": name,
+						"reason": "no_valid_goal_after_attempts",
+					})
+					_search_goal_invalid_logged = true
+				if _next_search_decision_time <= 0.0:
+					_next_search_decision_time = _rng.randf_range(0.35, 0.8)
+		elif _next_search_decision_time <= 0.0:
+			_next_search_decision_time = _rng.randf_range(0.35, 0.8)
 
 	_follow_current_path()
 
@@ -507,60 +520,33 @@ func _is_search_target_valid(target_point: Vector2) -> bool:
 		return clamped.distance_to(target_point) <= 1.0
 	return true
 
-func _pick_ruler_search_point(previous_target: Vector2 = Vector2.ZERO) -> Vector2:
+func _try_pick_ruler_search_point(previous_target: Vector2 = Vector2.ZERO) -> bool:
 	var world: Node = get_parent()
 	if world == null:
-		return Vector2.INF
-
-	var fallback_target := _last_valid_ruler_search_point
-	if fallback_target == Vector2.ZERO:
-		fallback_target = previous_target
-
-	var nearest_enemy := _find_nearest_enemy_any_distance()
-	if nearest_enemy != null:
-		var enemy_goal := _resolve_valid_search_goal(world, nearest_enemy.global_position, previous_target, fallback_target)
-		if enemy_goal != Vector2.INF:
-			_last_valid_ruler_search_point = enemy_goal
-			return enemy_goal
-
-	for attempt in _RULER_SEARCH_PICK_ATTEMPTS:
-		var angle := _rng.randf_range(0.0, TAU)
-		var distance := _rng.randf_range(ruler_search_move_distance_min, ruler_search_move_distance_max)
-		var desired_point := global_position + (Vector2.RIGHT.rotated(angle) * distance)
-		var roam_goal := _resolve_valid_search_goal(world, desired_point, previous_target, fallback_target)
-		if roam_goal == Vector2.INF:
-			continue
-		_last_valid_ruler_search_point = roam_goal
-		return roam_goal
-
-	_log_event("RULER_SEARCH_GOAL_INVALID", {
-		"ruler": name,
-		"reason": "no_valid_goal_after_attempts",
-	})
-	return Vector2.INF
-
-func _resolve_valid_search_goal(world: Node, desired_point: Vector2, previous_target: Vector2, fallback_target: Vector2) -> Vector2:
-	if not world.has_method("get_clamped_ruler_search_point"):
-		return Vector2.INF
-
-	var clamped_goal: Vector2 = world.get_clamped_ruler_search_point(global_position, desired_point, fallback_target)
-	if not _is_final_search_goal_valid(world, clamped_goal, previous_target):
-		return Vector2.INF
-	return clamped_goal
-
-func _is_final_search_goal_valid(world: Node, goal_point: Vector2, previous_target: Vector2) -> bool:
-	if goal_point == Vector2.INF:
 		return false
-	if not world.has_method("is_valid_ruler_search_point"):
+	if not world.has_method("try_get_valid_ruler_search_point"):
 		return false
-	if not world.is_valid_ruler_search_point(global_position, goal_point):
+
+	var result: Variant = world.try_get_valid_ruler_search_point(global_position, _RULER_SEARCH_MIN_TARGET_DISTANCE)
+	if not (result is Dictionary):
 		return false
-	if goal_point.distance_to(global_position) < _RULER_SEARCH_MIN_TARGET_DISTANCE:
+	var payload: Dictionary = result
+	if not payload.get("ok", false):
 		return false
-	if previous_target != Vector2.ZERO and goal_point.distance_to(previous_target) <= _RULER_SEARCH_GOAL_DUPLICATE_EPSILON:
+	if not payload.has("point"):
 		return false
-	if _last_valid_ruler_search_point != Vector2.ZERO and goal_point.distance_to(_last_valid_ruler_search_point) <= _RULER_SEARCH_GOAL_DUPLICATE_EPSILON:
+	var next_goal: Vector2 = payload.get("point", Vector2.INF)
+	if next_goal == Vector2.INF:
 		return false
+	if previous_target != Vector2.ZERO and next_goal.distance_to(previous_target) <= _RULER_SEARCH_GOAL_DUPLICATE_EPSILON:
+		return false
+	if _last_valid_ruler_search_point != Vector2.ZERO and next_goal.distance_to(_last_valid_ruler_search_point) <= _RULER_SEARCH_GOAL_DUPLICATE_EPSILON:
+		return false
+
+	_current_search_target = next_goal
+	_ruler_search_point = next_goal
+	_last_valid_ruler_search_point = next_goal
+	_search_goal_invalid_logged = false
 	return true
 
 func _update_guard_aggro_target() -> void:
