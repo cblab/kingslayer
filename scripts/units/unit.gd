@@ -38,6 +38,7 @@ enum UnitRole {
 @export var ruler_search_move_interval_max: float = 4.2
 @export var ruler_search_move_distance_min: float = 180.0
 @export var ruler_search_move_distance_max: float = 420.0
+@export var disband_cooldown_duration: float = 60.0
 
 var current_hp: float = 0.0
 
@@ -52,6 +53,8 @@ var _rng := RandomNumberGenerator.new()
 var _ruler_search_timer: float = 0.0
 var _ruler_search_point: Vector2 = Vector2.ZERO
 var _has_ruler_search_point: bool = false
+var _disband_cooldown_active: bool = false
+var _disband_cooldown_timer: float = 0.0
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -98,6 +101,10 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	if _disband_cooldown_active:
+		_process_disband_cooldown(delta)
+		return
+
 	if auto_aggro_enabled and not is_player_controlled:
 		_update_npc_aggro_target()
 
@@ -118,6 +125,8 @@ func take_damage(amount: float, attacker: Unit) -> void:
 
 	if attacker != null and is_instance_valid(attacker) and not attacker.is_dead() and attacker != self:
 		_last_valid_attacker = attacker
+		if _disband_cooldown_active and _attack_target == null and _is_enemy(attacker):
+			set_attack_target(attacker)
 
 	current_hp -= amount
 
@@ -184,6 +193,17 @@ func clear_guard_assignment() -> void:
 	set_role(UnitRole.FREE_KNIGHT)
 	faction_id = -1
 	_apply_role_visuals()
+
+func start_disband_cooldown(duration: float = -1.0) -> void:
+	_disband_cooldown_active = true
+	_disband_cooldown_timer = duration if duration > 0.0 else disband_cooldown_duration
+	_attack_target = null
+	_path = PackedVector2Array()
+	_path_index = 0
+	velocity = Vector2.ZERO
+
+func is_disband_cooldown_active() -> bool:
+	return _disband_cooldown_active
 
 func _process_guard_logic(delta: float) -> void:
 	var ruler := _get_ruler()
@@ -302,6 +322,9 @@ func _repath_to(target_position: Vector2) -> void:
 		_path_index = 0
 
 func _update_npc_aggro_target() -> void:
+	if _disband_cooldown_active:
+		return
+
 	match role:
 		UnitRole.ROYAL_GUARD:
 			_update_guard_aggro_target()
@@ -377,6 +400,17 @@ func _update_guard_aggro_target() -> void:
 	_attack_target = null
 	_path = PackedVector2Array()
 	_path_index = 0
+
+func _process_disband_cooldown(delta: float) -> void:
+	_disband_cooldown_timer = maxf(0.0, _disband_cooldown_timer - delta)
+	if _attack_target != null:
+		_process_attack_target(delta)
+	else:
+		velocity = Vector2.ZERO
+		move_and_slide()
+
+	if _disband_cooldown_timer <= 0.0:
+		_disband_cooldown_active = false
 
 func _find_nearest_enemy_in_range(radius: float) -> Unit:
 	return _find_nearest_enemy_to_point_in_range(global_position, radius)

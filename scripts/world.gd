@@ -62,6 +62,7 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 		if not _guard_references_unit(guard, dead_ruler):
 			continue
 		guard.clear_guard_assignment()
+		guard.start_disband_cooldown()
 		freed_guard_count += 1
 
 	_push_debug_event("Herrscher tot: %s" % dead_ruler.name)
@@ -82,6 +83,7 @@ func _stabilize_world_state() -> void:
 		var guard_ruler := _get_guard_ruler(unit)
 		if guard_ruler == null:
 			unit.clear_guard_assignment()
+			unit.start_disband_cooldown()
 			_push_debug_event("Eskorte zerfiel: %s wurde frei" % unit.name)
 
 func _get_live_units() -> Array[Unit]:
