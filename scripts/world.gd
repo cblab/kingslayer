@@ -34,10 +34,30 @@ const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
 
 func _ready() -> void:
 	_spawn_rng.randomize()
-	_prepare_periodic_free_knight_spawn_points()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_stabilize_world_state()
 	_refresh_debug_hud()
+
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var world_map = get_world_2d().navigation_map
+	var region_rid = $NavigationRegion2D.get_region_rid()
+
+	var world_center = NavigationServer2D.map_get_closest_point(
+		world_map, Vector2(640.0, 360.0)
+	)
+
+	var region_p1 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
+	var region_p2 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
+	var region_p3 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
+
+	print("NAV_DIAG world_center=", world_center,
+		" region_p1=", region_p1,
+		" region_p2=", region_p2,
+		" region_p3=", region_p3)
+
+	_prepare_periodic_free_knight_spawn_points()
 
 func log_event(event_type: String, data: Dictionary) -> void:
 	if event_type.is_empty():
