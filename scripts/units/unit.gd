@@ -220,6 +220,8 @@ func clear_guard_assignment() -> void:
 	_path_index = 0
 	set_role(UnitRole.FREE_KNIGHT)
 	faction_id = -1
+	ruler_path = NodePath()
+	guard_slot_index = 0
 	_apply_role_visuals()
 
 func start_disband_cooldown(duration: float = -1.0) -> void:
@@ -504,6 +506,13 @@ func _is_enemy(other: Unit) -> bool:
 		return false
 	if other == self or other.is_dead():
 		return false
+
+	# Freie Ritter sollen nach dem Guard-Zerfall wieder normal vom Spieler anwählbar sein.
+	# Während des Disband-Cooldowns bleibt das Ziel ungültig.
+	if is_player_controlled and other.role == UnitRole.FREE_KNIGHT:
+		return not other.is_disband_cooldown_active()
+	if other.is_player_controlled and role == UnitRole.FREE_KNIGHT:
+		return not is_disband_cooldown_active()
 	return faction_id != other.faction_id
 
 func _find_clicked_unit() -> Unit:
