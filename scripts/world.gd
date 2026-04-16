@@ -18,13 +18,14 @@ var _debug_events: Array[String] = []
 var _debug_event_limit: int = 10
 var _debug_focus_unit: Unit = null
 var _periodic_spawn_cooldown: float = 0.0
-var _spawn_sequence_index: int = 0
 var _validated_periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array()
+var _spawn_rng := RandomNumberGenerator.new()
 
 const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 const _SPAWN_POINT_DUPLICATE_EPSILON: float = 8.0
 const _SPAWN_POINT_MIN_SPACING: float = 120.0
 const _SPAWN_POINT_MIN_POOL_SIZE: int = 3
+const _SPAWN_JITTER_RADIUS: float = 40.0
 const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
 
 
@@ -32,6 +33,7 @@ const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel
 
 func _ready() -> void:
+	_spawn_rng.randomize()
 	_prepare_periodic_free_knight_spawn_points()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_stabilize_world_state()
@@ -97,27 +99,27 @@ func is_valid_ruler_search_point(from_position: Vector2, point: Vector2) -> bool
 		return false
 	return _is_point_navigable_from(from_position, point)
 
-func try_get_valid_ruler_search_point(from_pos: Vector2, min_dist: float, max_attempts := 8) -> Dictionary:
-	if max_attempts <= 0:
+func try_get_valid_ruler_search_point(from_pos: Vector2, min_dist: float, max_dist: float, attempts := 12) -> Dictionary:
+	if attempts <= 0:
 		return {"ok": false}
+	if max_dist <= min_dist:
+		max_dist = min_dist + 80.0
 
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var sampled_points: Array[Vector2] = []
-	var max_x := ruler_search_bounds.position.x + ruler_search_bounds.size.x
-	var max_y := ruler_search_bounds.position.y + ruler_search_bounds.size.y
 
-	for attempt in max_attempts:
-		var raw_point := Vector2(
-			rng.randf_range(ruler_search_bounds.position.x, max_x),
-			rng.randf_range(ruler_search_bounds.position.y, max_y)
-		)
-		var candidate := get_clamped_ruler_search_point(from_pos, raw_point, from_pos)
+	for _attempt in attempts:
+		var angle := rng.randf_range(0.0, TAU)
+		var distance := rng.randf_range(min_dist, max_dist)
+		var raw_point := from_pos + Vector2.RIGHT.rotated(angle) * distance
+		var candidate := _resolve_valid_spawn_point(raw_point)
 		if not ruler_search_bounds.has_point(candidate):
 			continue
 		if not is_valid_ruler_search_point(from_pos, candidate):
 			continue
-		if candidate.distance_to(from_pos) < min_dist:
+		var candidate_distance := candidate.distance_to(from_pos)
+		if candidate_distance < min_dist or candidate_distance > max_dist + 1.0:
 			continue
 
 		var is_duplicate := false
@@ -184,7 +186,7 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 		and killer.role != Unit.UnitRole.ROYAL_GUARD
 
 	if killer_is_valid_candidate:
-		killer.set_role(Unit.UnitRole.RULER)
+		_transfer_ruler_identity(dead_ruler, killer)
 		log_event("RULER_SUCCESSION", {
 			"old_ruler": dead_ruler.name,
 			"new_ruler": killer.name,
@@ -397,8 +399,11 @@ func _spawn_free_knight_at_next_point() -> void:
 	if _validated_periodic_free_knight_spawn_points.is_empty():
 		return
 
-	var spawn_point := _validated_periodic_free_knight_spawn_points[_spawn_sequence_index % _validated_periodic_free_knight_spawn_points.size()]
-	_spawn_sequence_index += 1
+	var spawn_anchor := _validated_periodic_free_knight_spawn_points[_spawn_rng.randi_range(0, _validated_periodic_free_knight_spawn_points.size() - 1)]
+	var jitter := Vector2.RIGHT.rotated(_spawn_rng.randf_range(0.0, TAU)) * _spawn_rng.randf_range(0.0, _SPAWN_JITTER_RADIUS)
+	var spawn_point := _resolve_valid_spawn_point(spawn_anchor + jitter)
+	if spawn_point == Vector2.INF:
+		spawn_point = spawn_anchor
 
 	var spawned_node := _FREE_KNIGHT_SCENE.instantiate()
 	if not (spawned_node is Unit):
@@ -409,7 +414,7 @@ func _spawn_free_knight_at_next_point() -> void:
 	var spawned_unit: Unit = spawned_node
 	spawned_unit.name = "SpawnedFreeKnight_%d" % Time.get_ticks_msec()
 	spawned_unit.is_player_controlled = false
-	spawned_unit.faction_id = -1
+	spawned_unit.reset_free_knight_identity()
 	add_child(spawned_unit)
 	spawned_unit.global_position = spawn_point
 	spawned_unit.set_role(Unit.UnitRole.FREE_KNIGHT)
@@ -421,7 +426,13 @@ func _spawn_free_knight_at_next_point() -> void:
 
 func _prepare_periodic_free_knight_spawn_points() -> void:
 	_validated_periodic_free_knight_spawn_points = PackedVector2Array()
-	for source_point in periodic_free_knight_spawn_points:
+	var source_points: Array[Vector2] = []
+	for configured_point in periodic_free_knight_spawn_points:
+		source_points.append(configured_point)
+	for anchor in _get_canonical_spawn_anchors():
+		source_points.append(anchor)
+
+	for source_point in source_points:
 		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
 		if validated_spawn_point == Vector2.INF:
 			log_event("FREE_KNIGHT_SPAWN_POINT_INVALID", {
@@ -454,14 +465,7 @@ func _is_spawn_point_too_close(points: PackedVector2Array, candidate: Vector2) -
 	return false
 
 func _apply_spawn_pool_fallback_points() -> void:
-	var center := ruler_search_bounds.position + (ruler_search_bounds.size * 0.5)
-	var fallback_sources: Array[Vector2] = [
-		center,
-		ruler_search_bounds.position + Vector2(160.0, 160.0),
-		ruler_search_bounds.position + Vector2(ruler_search_bounds.size.x - 160.0, 160.0),
-		ruler_search_bounds.position + Vector2(160.0, ruler_search_bounds.size.y - 160.0),
-		ruler_search_bounds.position + Vector2(ruler_search_bounds.size.x - 160.0, ruler_search_bounds.size.y - 160.0),
-	]
+	var fallback_sources := _get_canonical_spawn_anchors()
 
 	for source_point in fallback_sources:
 		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
@@ -475,16 +479,52 @@ func _apply_spawn_pool_fallback_points() -> void:
 		if _validated_periodic_free_knight_spawn_points.size() >= _SPAWN_POINT_MIN_POOL_SIZE:
 			break
 
+func _get_canonical_spawn_anchors() -> Array[Vector2]:
+	var min_x := ruler_search_bounds.position.x
+	var min_y := ruler_search_bounds.position.y
+	var max_x := ruler_search_bounds.position.x + ruler_search_bounds.size.x
+	var max_y := ruler_search_bounds.position.y + ruler_search_bounds.size.y
+
+	var x_quarters := [
+		lerpf(min_x, max_x, 0.2),
+		lerpf(min_x, max_x, 0.5),
+		lerpf(min_x, max_x, 0.8),
+	]
+	var y_quarters := [
+		lerpf(min_y, max_y, 0.2),
+		lerpf(min_y, max_y, 0.5),
+		lerpf(min_y, max_y, 0.8),
+	]
+
+	return [
+		Vector2(x_quarters[0], y_quarters[0]),
+		Vector2(x_quarters[1], y_quarters[0]),
+		Vector2(x_quarters[2], y_quarters[0]),
+		Vector2(x_quarters[0], y_quarters[1]),
+		Vector2(x_quarters[2], y_quarters[1]),
+		Vector2(x_quarters[0], y_quarters[2]),
+		Vector2(x_quarters[1], y_quarters[2]),
+		Vector2(x_quarters[2], y_quarters[2]),
+	]
+
 func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
 	var clamped_point := _clamp_to_ruler_search_bounds(raw_spawn_point)
-	if _is_point_navigable(clamped_point):
-		return clamped_point
+	var snapped_point := _snap_point_to_navigation(clamped_point)
+	if _is_point_navigable(snapped_point):
+		return snapped_point
 
-	var nearby_candidate := _find_navigable_spawn_nearby_point(clamped_point)
+	var nearby_candidate := _find_navigable_spawn_nearby_point(snapped_point)
 	if nearby_candidate != Vector2.INF:
 		return nearby_candidate
 
 	return Vector2.INF
+
+func _snap_point_to_navigation(point: Vector2) -> Vector2:
+	var nav_map := get_world_2d().navigation_map
+	var closest_point := NavigationServer2D.map_get_closest_point(nav_map, point)
+	if closest_point == Vector2.INF:
+		return point
+	return _clamp_to_ruler_search_bounds(closest_point)
 
 func _is_point_navigable(point: Vector2) -> bool:
 	var nav_map := get_world_2d().navigation_map
@@ -501,6 +541,14 @@ func _find_navigable_spawn_nearby_point(center_point: Vector2) -> Vector2:
 			var angle := (TAU / float(direction_count)) * float(index)
 			var offset := Vector2.RIGHT.rotated(angle) * distance
 			var candidate := _clamp_to_ruler_search_bounds(center_point + offset)
-			if _is_point_navigable(candidate):
-				return candidate
+			var snapped_candidate := _snap_point_to_navigation(candidate)
+			if _is_point_navigable(snapped_candidate):
+				return snapped_candidate
 	return Vector2.INF
+
+func _transfer_ruler_identity(dead_ruler: Unit, successor: Unit) -> void:
+	if not _is_valid_live_unit(dead_ruler):
+		return
+	if not _is_valid_live_unit(successor):
+		return
+	successor.absorb_ruler_identity_from(dead_ruler)
