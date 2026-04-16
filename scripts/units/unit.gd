@@ -85,11 +85,11 @@ const _RULER_SEARCH_STUCK_DELTA_EPSILON: float = 3.0
 const _RULER_SEARCH_MIN_TARGET_DISTANCE: float = 96.0
 const _RULER_SEARCH_GOAL_DUPLICATE_EPSILON: float = 12.0
 const SEARCH_RETRY_COOLDOWN := 1.0
-const _GUARD_FOLLOW_REACQUIRE_INTERVAL: float = 0.20
-const _GUARD_FOLLOW_REACQUIRE_DISTANCE: float = 70.0
-const _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE: float = 28.0
-const _GUARD_FOLLOW_POINT_MOVE_THRESHOLD: float = 24.0
-
+const _GUARD_FOLLOW_REACQUIRE_INTERVAL: float = 0.10
+const _GUARD_FOLLOW_REACQUIRE_DISTANCE: float = 40.0
+const _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE: float = 18.0
+const _GUARD_FOLLOW_POINT_MOVE_THRESHOLD: float = 12.0
+const _GUARD_FOLLOW_CATCHUP_DISTANCE: float = 110.0
 
 @onready var _visual: Polygon2D = $Visual
 @onready var _ruler_marker: Node2D = $RulerMarker
@@ -350,32 +350,43 @@ func _get_guard_hold_position(ruler: Unit) -> Vector2:
 	var offset := Vector2.RIGHT.rotated(angle) * guard_hold_radius
 	return ruler.global_position + offset
 
-func _get_guard_follow_point_for_ruler(ruler: Unit) -> Vector2:
+func _get_guard_follow_point_for_ruler(ruler: Unit, catchup: bool = false) -> Vector2:
+	if catchup:
+		var angle := PI * 0.5 * float(guard_slot_index)
+		var offset := Vector2.RIGHT.rotated(angle) * minf(guard_hold_radius * 0.35, 42.0)
+		return ruler.global_position + offset
 	return _get_guard_hold_position(ruler)
 
 func _process_guard_follow(delta: float, ruler: Unit) -> void:
 	if role != UnitRole.ROYAL_GUARD or _attack_target != null or _disband_cooldown_active:
 		return
 
-	var follow_point := _get_guard_follow_point_for_ruler(ruler)
+	var distance_to_ruler := global_position.distance_to(ruler.global_position)
+	var catchup := distance_to_ruler > _GUARD_FOLLOW_CATCHUP_DISTANCE
+
+	var follow_point := _get_guard_follow_point_for_ruler(ruler, catchup)
 	var distance_to_follow_point := global_position.distance_to(follow_point)
-	if distance_to_follow_point < _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE:
+
+	if distance_to_follow_point <= _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE and not catchup:
 		_guard_follow_close_enough = true
-	elif distance_to_follow_point > _GUARD_FOLLOW_REACQUIRE_DISTANCE:
+	elif distance_to_follow_point >= _GUARD_FOLLOW_REACQUIRE_DISTANCE or catchup:
 		_guard_follow_close_enough = false
 
 	_guard_follow_reacquire_cooldown = maxf(0.0, _guard_follow_reacquire_cooldown - delta)
+
+	var has_last_follow_point := _last_guard_follow_point != Vector2.INF
+	var follow_point_shift := INF
+	if has_last_follow_point:
+		follow_point_shift = follow_point.distance_to(_last_guard_follow_point)
+
 	var should_reacquire := false
 	if _guard_follow_reacquire_cooldown <= 0.0:
-		var has_last_follow_point := _last_guard_follow_point != Vector2.INF
-		var follow_point_shift := INF
-		if has_last_follow_point:
-			follow_point_shift = follow_point.distance_to(_last_guard_follow_point)
 		should_reacquire = not has_last_follow_point \
+			or catchup \
 			or distance_to_follow_point > _GUARD_FOLLOW_REACQUIRE_DISTANCE \
 			or follow_point_shift > _GUARD_FOLLOW_POINT_MOVE_THRESHOLD
 
-	if should_reacquire and not _guard_follow_close_enough:
+	if should_reacquire:
 		_repath_to(follow_point)
 		_last_guard_follow_point = follow_point
 		_guard_follow_reacquire_cooldown = _GUARD_FOLLOW_REACQUIRE_INTERVAL
@@ -626,10 +637,11 @@ func _update_guard_aggro_target() -> void:
 		set_attack_target(null, "guard_lost_ruler")
 		return
 
+	var current_target := get_attack_target()
+
 	if _attack_target == null and _guard_target_reacquire_timer > 0.0:
 		return
 
-	var current_target := get_attack_target()
 	if current_target != null and _is_enemy(current_target):
 		var current_target_distance_to_ruler := current_target.global_position.distance_to(ruler.global_position)
 		if current_target_distance_to_ruler <= guard_chase_limit + guard_chase_hysteresis:
@@ -712,8 +724,6 @@ func _is_enemy(other: Unit) -> bool:
 	if other == self or other.is_dead():
 		return false
 
-	# Freie Ritter sollen nach dem Guard-Zerfall wieder normal vom Spieler anwählbar sein.
-	# Während des Disband-Cooldowns bleibt das Ziel ungültig.
 	if is_player_controlled and other.role == UnitRole.FREE_KNIGHT:
 		return not other.is_disband_cooldown_active()
 	if other.is_player_controlled and role == UnitRole.FREE_KNIGHT:
