@@ -18,6 +18,11 @@ role = 0
 faction_id = -1
 free_knight_color = Color(0.45, 0.52, 0.62, 1)
 
+[node name="FollowCamera" type="Camera2D" parent="PlayerUnit"]
+enabled = true
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0
+
 [node name="RulerRed" parent="." instance=ExtResource("2_unit_scene")]
 position = Vector2(120, 120)
 role = 1
