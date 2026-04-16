@@ -41,40 +41,33 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 
-	var world_map = get_world_2d().navigation_map
-	var world_center = NavigationServer2D.map_get_closest_point(
-	world_map, Vector2(640.0, 360.0)
-	)
+	var main_root := get_node_or_null("/root/Main")
+	var nav_regions: Array[NavigationRegion2D] = []
+	_collect_navigation_regions(main_root, nav_regions)
 
-	var nav_region := _find_navigation_region(self)
-
-	if nav_region == null:
-		print("NAV_DIAG no NavigationRegion2D-derived node found under ", get_path())
+	if nav_regions.is_empty():
+		print("NAV_DIAG no NavigationRegion2D-derived nodes found under /root/Main")
 	else:
-		var region_rid = nav_region.get_region_rid()
-		var region_p1 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
-		var region_p2 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
-		var region_p3 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
-
-		print("NAV_DIAG nav_region_path=", nav_region.get_path(),
-			" region_rid=", region_rid,
-			" world_center=", world_center,
-			" region_p1=", region_p1,
-			" region_p2=", region_p2,
-			" region_p3=", region_p3)
+		for nav_region in nav_regions:
+			var script_path := "-"
+			var script_ref := nav_region.get_script()
+			if script_ref is Script:
+				script_path = script_ref.resource_path
+			if script_path.is_empty():
+				script_path = "-"
+			print("NAV_DIAG region found path=", nav_region.get_path(),
+				" name=", nav_region.name,
+				" script=", script_path)
 
 	_prepare_periodic_free_knight_spawn_points()
 
-func _find_navigation_region(root: Node) -> NavigationRegion2D:
+func _collect_navigation_regions(root: Node, out_regions: Array[NavigationRegion2D]) -> void:
 	if root == null:
-		return null
+		return
+	if root is NavigationRegion2D:
+		out_regions.append(root)
 	for child in root.get_children():
-		if child is NavigationRegion2D:
-			return child
-		var nested_match := _find_navigation_region(child)
-		if nested_match != null:
-			return nested_match
-	return null
+		_collect_navigation_regions(child, out_regions)
 
 func log_event(event_type: String, data: Dictionary) -> void:
 	if event_type.is_empty():
