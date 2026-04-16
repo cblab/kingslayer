@@ -28,46 +28,15 @@ const _SPAWN_POINT_MIN_POOL_SIZE: int = 3
 const _SPAWN_JITTER_RADIUS: float = 40.0
 const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
 
-
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel
 
 func _ready() -> void:
 	_spawn_rng.randomize()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
+	_prepare_periodic_free_knight_spawn_points()
 	_stabilize_world_state()
 	_refresh_debug_hud()
-
-	await get_tree().process_frame
-	await get_tree().process_frame
-
-	var main_root := get_node_or_null("/root/Main")
-	var nav_regions: Array[NavigationRegion2D] = []
-	_collect_navigation_regions(main_root, nav_regions)
-
-	if nav_regions.is_empty():
-		print("NAV_DIAG no NavigationRegion2D-derived nodes found under /root/Main")
-	else:
-		for nav_region in nav_regions:
-			var script_path := "-"
-			var script_ref := nav_region.get_script()
-			if script_ref is Script:
-				script_path = script_ref.resource_path
-			if script_path.is_empty():
-				script_path = "-"
-			print("NAV_DIAG region found path=", nav_region.get_path(),
-				" name=", nav_region.name,
-				" script=", script_path)
-
-	_prepare_periodic_free_knight_spawn_points()
-
-func _collect_navigation_regions(root: Node, out_regions: Array[NavigationRegion2D]) -> void:
-	if root == null:
-		return
-	if root is NavigationRegion2D:
-		out_regions.append(root)
-	for child in root.get_children():
-		_collect_navigation_regions(child, out_regions)
 
 func log_event(event_type: String, data: Dictionary) -> void:
 	if event_type.is_empty():
@@ -111,23 +80,17 @@ func find_path(from_position: Vector2, to_position: Vector2) -> PackedVector2Arr
 
 func get_clamped_ruler_search_point(from_position: Vector2, desired_point: Vector2, fallback_point: Vector2 = Vector2.ZERO) -> Vector2:
 	var clamped := _clamp_to_ruler_search_bounds(desired_point)
-	if _is_point_navigable_from(from_position, clamped):
+	if clamped.distance_to(from_position) > 1.0:
 		return clamped
 
-	var nearby_candidate := _find_navigable_nearby_point(from_position, clamped)
-	if nearby_candidate != Vector2.INF:
-		return nearby_candidate
-
 	var fallback_clamped := _clamp_to_ruler_search_bounds(fallback_point)
-	if _is_point_navigable_from(from_position, fallback_clamped):
+	if fallback_clamped.distance_to(from_position) > 1.0:
 		return fallback_clamped
 
 	return _clamp_to_ruler_search_bounds(from_position)
 
-func is_valid_ruler_search_point(from_position: Vector2, point: Vector2) -> bool:
-	if not ruler_search_bounds.has_point(point):
-		return false
-	return _is_point_navigable_from(from_position, point)
+func is_valid_ruler_search_point(_from_position: Vector2, point: Vector2) -> bool:
+	return ruler_search_bounds.has_point(point)
 
 func try_get_valid_ruler_search_point(from_pos: Vector2, min_dist: float, max_dist: float, attempts := 12) -> Dictionary:
 	if attempts <= 0:
@@ -143,11 +106,11 @@ func try_get_valid_ruler_search_point(from_pos: Vector2, min_dist: float, max_di
 		var angle := rng.randf_range(0.0, TAU)
 		var distance := rng.randf_range(min_dist, max_dist)
 		var raw_point := from_pos + Vector2.RIGHT.rotated(angle) * distance
-		var candidate := _resolve_valid_spawn_point(raw_point)
-		if not ruler_search_bounds.has_point(candidate):
-			continue
+		var candidate := _clamp_to_ruler_search_bounds(raw_point)
+
 		if not is_valid_ruler_search_point(from_pos, candidate):
 			continue
+
 		var candidate_distance := candidate.distance_to(from_pos)
 		if candidate_distance < min_dist or candidate_distance > max_dist + 1.0:
 			continue
@@ -188,7 +151,6 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 	if role_at_death != Unit.UnitRole.RULER:
 		return
 
-	# Zerfall: Eskorte des toten Herrschers wird frei, keine Rebind-Übernahme.
 	var freed_guard_count := 0
 	for guard in _get_live_units():
 		if guard.role != Unit.UnitRole.ROYAL_GUARD:
@@ -391,23 +353,6 @@ func _clamp_to_ruler_search_bounds(point: Vector2) -> Vector2:
 		clampf(point.y, ruler_search_bounds.position.y, max_y)
 	)
 
-func _is_point_navigable_from(from_position: Vector2, target_position: Vector2) -> bool:
-	var nav_map := get_world_2d().navigation_map
-	var path := NavigationServer2D.map_get_path(nav_map, from_position, target_position, false)
-	return not path.is_empty()
-
-func _find_navigable_nearby_point(from_position: Vector2, center_point: Vector2) -> Vector2:
-	var probe_distances: Array[float] = [40.0, 90.0, 150.0, 220.0]
-	var direction_count := 8
-	for distance in probe_distances:
-		for index in direction_count:
-			var angle := (TAU / float(direction_count)) * float(index)
-			var offset := Vector2.RIGHT.rotated(angle) * distance
-			var candidate := _clamp_to_ruler_search_bounds(center_point + offset)
-			if _is_point_navigable_from(from_position, candidate):
-				return candidate
-	return Vector2.INF
-
 func _process_periodic_free_knight_spawn(delta: float) -> void:
 	if not periodic_free_knight_spawn_enabled:
 		return
@@ -431,9 +376,7 @@ func _spawn_free_knight_at_next_point() -> void:
 
 	var spawn_anchor := _validated_periodic_free_knight_spawn_points[_spawn_rng.randi_range(0, _validated_periodic_free_knight_spawn_points.size() - 1)]
 	var jitter := Vector2.RIGHT.rotated(_spawn_rng.randf_range(0.0, TAU)) * _spawn_rng.randf_range(0.0, _SPAWN_JITTER_RADIUS)
-	var spawn_point := _resolve_valid_spawn_point(spawn_anchor + jitter)
-	if spawn_point == Vector2.INF:
-		spawn_point = spawn_anchor
+	var spawn_point := _clamp_to_ruler_search_bounds(spawn_anchor + jitter)
 
 	var spawned_node := _FREE_KNIGHT_SCENE.instantiate()
 	if not (spawned_node is Unit):
@@ -456,13 +399,8 @@ func _spawn_free_knight_at_next_point() -> void:
 
 func _prepare_periodic_free_knight_spawn_points() -> void:
 	_validated_periodic_free_knight_spawn_points = PackedVector2Array()
-	var source_points: Array[Vector2] = []
-	for configured_point in periodic_free_knight_spawn_points:
-		source_points.append(configured_point)
-	for anchor in _get_canonical_spawn_anchors():
-		source_points.append(anchor)
 
-	for source_point in source_points:
+	for source_point in periodic_free_knight_spawn_points:
 		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
 		if validated_spawn_point == Vector2.INF:
 			log_event("FREE_KNIGHT_SPAWN_POINT_INVALID", {
@@ -480,7 +418,6 @@ func _prepare_periodic_free_knight_spawn_points() -> void:
 		log_event("FREE_KNIGHT_SPAWN_POOL_DEGENERATE", {
 			"validated_points": _validated_periodic_free_knight_spawn_points.size(),
 		})
-		_apply_spawn_pool_fallback_points()
 
 func _is_spawn_point_near_duplicate(points: PackedVector2Array, candidate: Vector2) -> bool:
 	for point in points:
@@ -494,87 +431,10 @@ func _is_spawn_point_too_close(points: PackedVector2Array, candidate: Vector2) -
 			return true
 	return false
 
-func _apply_spawn_pool_fallback_points() -> void:
-	var fallback_sources := _get_canonical_spawn_anchors()
-
-	for source_point in fallback_sources:
-		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
-		if validated_spawn_point == Vector2.INF:
-			continue
-		if _is_spawn_point_near_duplicate(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
-			continue
-		if _is_spawn_point_too_close(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
-			continue
-		_validated_periodic_free_knight_spawn_points.append(validated_spawn_point)
-		if _validated_periodic_free_knight_spawn_points.size() >= _SPAWN_POINT_MIN_POOL_SIZE:
-			break
-
-func _get_canonical_spawn_anchors() -> Array[Vector2]:
-	var min_x := ruler_search_bounds.position.x
-	var min_y := ruler_search_bounds.position.y
-	var max_x := ruler_search_bounds.position.x + ruler_search_bounds.size.x
-	var max_y := ruler_search_bounds.position.y + ruler_search_bounds.size.y
-
-	var x_quarters := [
-		lerpf(min_x, max_x, 0.2),
-		lerpf(min_x, max_x, 0.5),
-		lerpf(min_x, max_x, 0.8),
-	]
-	var y_quarters := [
-		lerpf(min_y, max_y, 0.2),
-		lerpf(min_y, max_y, 0.5),
-		lerpf(min_y, max_y, 0.8),
-	]
-
-	return [
-		Vector2(x_quarters[0], y_quarters[0]),
-		Vector2(x_quarters[1], y_quarters[0]),
-		Vector2(x_quarters[2], y_quarters[0]),
-		Vector2(x_quarters[0], y_quarters[1]),
-		Vector2(x_quarters[2], y_quarters[1]),
-		Vector2(x_quarters[0], y_quarters[2]),
-		Vector2(x_quarters[1], y_quarters[2]),
-		Vector2(x_quarters[2], y_quarters[2]),
-	]
-
 func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
-	var clamped_point := _clamp_to_ruler_search_bounds(raw_spawn_point)
-	var snapped_point := _snap_point_to_navigation(clamped_point)
-	if _is_point_navigable(snapped_point):
-		return snapped_point
-
-	var nearby_candidate := _find_navigable_spawn_nearby_point(snapped_point)
-	if nearby_candidate != Vector2.INF:
-		return nearby_candidate
-
-	return Vector2.INF
-
-func _snap_point_to_navigation(point: Vector2) -> Vector2:
-	var nav_map := get_world_2d().navigation_map
-	var closest_point := NavigationServer2D.map_get_closest_point(nav_map, point)
-	if closest_point == Vector2.INF:
-		return point
-	return _clamp_to_ruler_search_bounds(closest_point)
-
-func _is_point_navigable(point: Vector2) -> bool:
-	var nav_map := get_world_2d().navigation_map
-	var closest_point := NavigationServer2D.map_get_closest_point(nav_map, point)
-	if closest_point == Vector2.INF:
-		return false
-	return closest_point.distance_to(point) <= 72.0
-
-func _find_navigable_spawn_nearby_point(center_point: Vector2) -> Vector2:
-	var probe_distances: Array[float] = [40.0, 90.0, 150.0, 220.0]
-	var direction_count := 8
-	for distance in probe_distances:
-		for index in direction_count:
-			var angle := (TAU / float(direction_count)) * float(index)
-			var offset := Vector2.RIGHT.rotated(angle) * distance
-			var candidate := _clamp_to_ruler_search_bounds(center_point + offset)
-			var snapped_candidate := _snap_point_to_navigation(candidate)
-			if _is_point_navigable(snapped_candidate):
-				return snapped_candidate
-	return Vector2.INF
+	if not ruler_search_bounds.has_point(raw_spawn_point):
+		return Vector2.INF
+	return raw_spawn_point
 
 func _transfer_ruler_identity(dead_ruler: Unit, successor: Unit) -> void:
 	if not _is_valid_live_unit(dead_ruler):
