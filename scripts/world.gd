@@ -48,8 +48,10 @@ func on_ruler_attacked(ruler: Unit, attacker: Unit) -> void:
 			continue
 		guard.set_attack_target(attacker)
 
-func on_ruler_died(dead_ruler: Unit, killer: Unit) -> void:
+func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole = Unit.UnitRole.FREE_KNIGHT) -> void:
 	if dead_ruler == null or not is_instance_valid(dead_ruler):
+		return
+	if role_at_death != Unit.UnitRole.RULER:
 		return
 
 	# Zerfall: Eskorte des toten Herrschers wird frei, keine Rebind-Übernahme.
@@ -57,8 +59,7 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit) -> void:
 	for guard in _get_live_units():
 		if guard.role != Unit.UnitRole.ROYAL_GUARD:
 			continue
-		var guard_ruler := _get_guard_ruler(guard)
-		if guard_ruler != dead_ruler:
+		if not _guard_references_unit(guard, dead_ruler):
 			continue
 		guard.clear_guard_assignment()
 		freed_guard_count += 1
@@ -105,6 +106,19 @@ func _get_guard_ruler(guard: Unit) -> Unit:
 	if ruler is Unit and _is_valid_live_unit(ruler):
 		return ruler
 	return null
+
+func _guard_references_unit(guard: Unit, target_unit: Unit) -> bool:
+	if guard == null or not is_instance_valid(guard):
+		return false
+	if target_unit == null or not is_instance_valid(target_unit):
+		return false
+	if guard.role != Unit.UnitRole.ROYAL_GUARD:
+		return false
+	if guard.ruler_path.is_empty():
+		return false
+
+	var ruler := guard.get_node_or_null(guard.ruler_path)
+	return ruler == target_unit
 
 func _is_valid_live_unit(unit: Unit) -> bool:
 	if unit == null or not is_instance_valid(unit):

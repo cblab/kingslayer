@@ -442,11 +442,12 @@ func _die() -> void:
 		return
 
 	_is_dead = true
+	var role_at_death := role
 	print("Unit died: ", name)
 
-	if role == UnitRole.RULER:
+	if role_at_death == UnitRole.RULER:
 		var world: Node = get_parent()
 		if world != null and world.has_method("on_ruler_died"):
-			world.on_ruler_died(self, get_last_valid_attacker())
+			world.on_ruler_died(self, get_last_valid_attacker(), role_at_death)
 
 	queue_free()
