@@ -496,7 +496,7 @@ func _is_search_target_valid(target_point: Vector2) -> bool:
 	if world.has_method("is_valid_ruler_search_point"):
 		return world.is_valid_ruler_search_point(global_position, target_point)
 	if world.has_method("get_clamped_ruler_search_point"):
-		var clamped := world.get_clamped_ruler_search_point(global_position, target_point, target_point)
+		var clamped: Vector2 = world.get_clamped_ruler_search_point(global_position, target_point, target_point)
 		return clamped.distance_to(target_point) <= 1.0
 	return true
 
