@@ -101,6 +101,9 @@ const _GUARD_FOLLOW_REACQUIRE_DISTANCE: float = 40.0
 const _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE: float = 18.0
 const _GUARD_FOLLOW_POINT_MOVE_THRESHOLD: float = 12.0
 const _GUARD_FOLLOW_CATCHUP_DISTANCE: float = 110.0
+const _BODY_SPRITE_VISUAL_SCALE := Vector2(1.5, 1.5)
+const _BODY_SPRITE_VISUAL_POSITION := Vector2(0.0, 12.0)
+const _RULER_MARKER_VISUAL_POSITION := Vector2(0.0, -8.0)
 
 @onready var _visual: Polygon2D = $Visual
 @onready var _body_sprite: AnimatedSprite2D = $BodySprite
@@ -425,6 +428,12 @@ func _apply_role_visuals() -> void:
 	if _body_sprite == null:
 		push_warning("Unit '%s': Missing BodySprite node, skipping role visuals." % name)
 		return
+
+	_body_sprite.scale = _BODY_SPRITE_VISUAL_SCALE
+	_body_sprite.position = _BODY_SPRITE_VISUAL_POSITION
+	_body_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	if _ruler_marker != null:
+		_ruler_marker.position = _RULER_MARKER_VISUAL_POSITION
 
 	match role:
 		UnitRole.RULER:

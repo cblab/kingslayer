@@ -14,10 +14,13 @@ color = Color(0.2, 0.35, 0.85, 1)
 polygon = PackedVector2Array(0, -22, 16, -6, 12, 20, -12, 20, -16, -6)
 
 [node name="BodySprite" type="AnimatedSprite2D" parent="."]
-position = Vector2(0, 20)
+position = Vector2(0, 12)
+scale = Vector2(1.5, 1.5)
+texture_filter = 1
 
 [node name="RulerMarker" type="Polygon2D" parent="."]
 visible = false
+position = Vector2(0, -8)
 color = Color(1, 0.95, 0.2, 1)
 polygon = PackedVector2Array(0, -34, 6, -24, -6, -24)
 
