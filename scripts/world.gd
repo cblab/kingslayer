@@ -6,6 +6,7 @@ extends Node2D
 var _stabilize_cooldown: float = 0.0
 var _debug_hud_cooldown: float = 0.0
 var _debug_events: Array[String] = []
+var _debug_event_limit: int = 10
 var _debug_focus_unit: Unit = null
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
@@ -13,8 +14,27 @@ var _debug_focus_unit: Unit = null
 
 func _ready() -> void:
 	_stabilize_world_state()
-	_push_debug_event("Debug-HUD aktiv.")
 	_refresh_debug_hud()
+
+func log_event(event_type: String, data: Dictionary) -> void:
+	if event_type.is_empty():
+		return
+
+	var timestamp := Time.get_ticks_msec() / 1000.0
+	var parts: Array[String] = []
+	var keys := data.keys()
+	keys.sort()
+	for key in keys:
+		parts.append("%s=%s" % [str(key), _format_log_value(data[key])])
+
+	var line := "[%.2f] %s" % [timestamp, event_type]
+	if not parts.is_empty():
+		line += " " + " ".join(parts)
+
+	print(line)
+	_debug_events.append(line)
+	while _debug_events.size() > _debug_event_limit:
+		_debug_events.pop_front()
 
 func _process(delta: float) -> void:
 	_stabilize_cooldown -= delta
@@ -61,17 +81,27 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 			continue
 		if not _guard_references_unit(guard, dead_ruler):
 			continue
+		log_event("GUARD_DISBANDED", {
+			"guard": guard.name,
+			"old_ruler": dead_ruler.name,
+		})
 		guard.clear_guard_assignment()
 		guard.start_disband_cooldown()
 		freed_guard_count += 1
 
-	_push_debug_event("Herrscher tot: %s" % dead_ruler.name)
-	if freed_guard_count > 0:
-		_push_debug_event("Eskorte zerfiel: %s Guards frei" % freed_guard_count)
+	log_event("RULER_DIED", {
+		"ruler": dead_ruler.name,
+		"killer": killer.name if _is_valid_live_unit(killer) else "-",
+		"role_at_death": _role_to_text(role_at_death),
+		"guards_freed": freed_guard_count,
+	})
 
 	if _is_valid_live_unit(killer) and killer != dead_ruler:
 		killer.set_role(Unit.UnitRole.RULER)
-		_push_debug_event("Neue Herrscherrolle: %s" % killer.name)
+		log_event("RULER_SUCCESSION", {
+			"old_ruler": dead_ruler.name,
+			"new_ruler": killer.name,
+		})
 
 	_stabilize_world_state()
 	_refresh_debug_hud()
@@ -80,11 +110,22 @@ func _stabilize_world_state() -> void:
 	for unit in _get_live_units():
 		if unit.role != Unit.UnitRole.ROYAL_GUARD:
 			continue
-		var guard_ruler := _get_guard_ruler(unit)
+		var guard_ruler := _get_guard_ruler_reference(unit)
 		if guard_ruler == null:
+			log_event("GUARD_DISBANDED", {
+				"guard": unit.name,
+				"old_ruler": "-",
+			})
 			unit.clear_guard_assignment()
 			unit.start_disband_cooldown()
-			_push_debug_event("Eskorte zerfiel: %s wurde frei" % unit.name)
+			continue
+		if guard_ruler.is_dead():
+			log_event("GUARD_DISBANDED", {
+				"guard": unit.name,
+				"old_ruler": guard_ruler.name,
+			})
+			unit.clear_guard_assignment()
+			unit.start_disband_cooldown()
 
 func _get_live_units() -> Array[Unit]:
 	var units: Array[Unit] = []
@@ -97,6 +138,12 @@ func _get_live_units() -> Array[Unit]:
 	return units
 
 func _get_guard_ruler(guard: Unit) -> Unit:
+	var ruler := _get_guard_ruler_reference(guard)
+	if _is_valid_live_unit(ruler):
+		return ruler
+	return null
+
+func _get_guard_ruler_reference(guard: Unit) -> Unit:
 	if guard == null or not is_instance_valid(guard):
 		return null
 	if guard.role != Unit.UnitRole.ROYAL_GUARD:
@@ -105,7 +152,7 @@ func _get_guard_ruler(guard: Unit) -> Unit:
 		return null
 
 	var ruler := guard.get_node_or_null(guard.ruler_path)
-	if ruler is Unit and _is_valid_live_unit(ruler):
+	if ruler is Unit:
 		return ruler
 	return null
 
@@ -183,12 +230,11 @@ func _refresh_debug_hud() -> void:
 	_debug_status_label.text = "\n".join(lines)
 	_debug_events_label.text = "Events:\n%s" % "\n".join(_debug_events)
 
-func _push_debug_event(message: String) -> void:
-	if message.is_empty():
-		return
-	_debug_events.append(message)
-	while _debug_events.size() > 5:
-		_debug_events.pop_front()
+func _format_log_value(value: Variant) -> String:
+	if value is Vector2:
+		var vec: Vector2 = value
+		return "(%.1f,%.1f)" % [vec.x, vec.y]
+	return str(value)
 
 func _role_to_text(role: Unit.UnitRole) -> String:
 	match role:
