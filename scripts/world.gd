@@ -6,7 +6,6 @@ extends Node2D
 @export var periodic_free_knight_spawn_interval: float = 22.0
 @export var periodic_free_knight_spawn_enabled: bool = true
 @export var periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array([
-	Vector2(-1000.0, 2000.0),
 	Vector2(120.0, 120.0),
 	Vector2(1330.0, 120.0),
 	Vector2(730.0, 980.0),
@@ -25,8 +24,8 @@ const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 const _SPAWN_POINT_DUPLICATE_EPSILON: float = 8.0
 const _SPAWN_POINT_MIN_SPACING: float = 120.0
 const _SPAWN_POINT_MIN_POOL_SIZE: int = 3
-const _SPAWN_JITTER_RADIUS: float = 40.0
 const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
+const _SPAWN_JITTER_RADIUS: float = 24.0
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel

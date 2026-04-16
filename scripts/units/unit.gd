@@ -357,46 +357,44 @@ func _get_guard_follow_point_for_ruler(ruler: Unit, catchup: bool = false) -> Ve
 		return ruler.global_position + offset
 	return _get_guard_hold_position(ruler)
 
-func _process_guard_follow(delta: float, ruler: Unit) -> void:
+func _process_guard_follow(_delta: float, ruler: Unit) -> void:
 	if role != UnitRole.ROYAL_GUARD or _attack_target != null or _disband_cooldown_active:
 		return
 
+	var follow_point := _get_guard_follow_point_for_ruler(ruler)
 	var distance_to_ruler := global_position.distance_to(ruler.global_position)
-	var catchup := distance_to_ruler > _GUARD_FOLLOW_CATCHUP_DISTANCE
-
-	var follow_point := _get_guard_follow_point_for_ruler(ruler, catchup)
 	var distance_to_follow_point := global_position.distance_to(follow_point)
 
-	if distance_to_follow_point <= _GUARD_FOLLOW_CLOSE_ENOUGH_DISTANCE and not catchup:
+	# Wenn der Guard zu weit vom Herrscher weg ist, nicht mehr
+	# stur den Slot verfolgen, sondern direkt zum Herrscher aufschließen.
+	var catchup_distance := guard_hold_radius + guard_return_distance
+	if distance_to_ruler > catchup_distance:
+		follow_point = ruler.global_position
+		distance_to_follow_point = distance_to_ruler
+
+	# Hysterese:
+	# nah genug -> stehen bleiben
+	# deutlich zu weit weg -> wieder anlaufen
+	if distance_to_follow_point <= guard_return_distance:
 		_guard_follow_close_enough = true
-	elif distance_to_follow_point >= _GUARD_FOLLOW_REACQUIRE_DISTANCE or catchup:
+	elif distance_to_follow_point >= guard_hold_radius:
 		_guard_follow_close_enough = false
 
-	_guard_follow_reacquire_cooldown = maxf(0.0, _guard_follow_reacquire_cooldown - delta)
+	# Escort-Follow bewusst ohne permanentes Repathing.
+	# Das Repathing auf einen beweglichen Punkt erzeugt das sichtbare Ruckeln.
+	_path = PackedVector2Array()
+	_path_index = 0
+	_last_guard_follow_point = follow_point
+	_guard_follow_reacquire_cooldown = 0.0
 
-	var has_last_follow_point := _last_guard_follow_point != Vector2.INF
-	var follow_point_shift := INF
-	if has_last_follow_point:
-		follow_point_shift = follow_point.distance_to(_last_guard_follow_point)
-
-	var should_reacquire := false
-	if _guard_follow_reacquire_cooldown <= 0.0:
-		should_reacquire = not has_last_follow_point \
-			or catchup \
-			or distance_to_follow_point > _GUARD_FOLLOW_REACQUIRE_DISTANCE \
-			or follow_point_shift > _GUARD_FOLLOW_POINT_MOVE_THRESHOLD
-
-	if should_reacquire:
-		_repath_to(follow_point)
-		_last_guard_follow_point = follow_point
-		_guard_follow_reacquire_cooldown = _GUARD_FOLLOW_REACQUIRE_INTERVAL
-
-	if _guard_follow_close_enough and _path_index >= _path.size():
+	if _guard_follow_close_enough:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
 
-	_follow_current_path()
+	var direction := global_position.direction_to(follow_point)
+	velocity = direction * move_speed
+	move_and_slide()
 
 func _apply_role_visuals() -> void:
 	if _visual == null:
