@@ -81,6 +81,9 @@ var _local_escape_target: Vector2 = Vector2.ZERO
 var _local_escape_cooldown: float = 0.0
 var _local_escape_hold_timer: float = 0.0
 var _local_escape_latch: bool = false
+var _local_escape_elapsed: float = 0.0
+var _local_escape_progress_timer: float = 0.0
+var _last_local_escape_progress_position: Vector2 = Vector2.INF
 var _local_stuck_detected_logged: bool = false
 var _death_cleanup_scheduled: bool = false
 var _queued_attack_animation: bool = false
@@ -115,6 +118,9 @@ const _LOCAL_ESCAPE_STEP_DISTANCE: float = 58.0
 const _LOCAL_ESCAPE_REACHED_EPSILON: float = 10.0
 const _LOCAL_ESCAPE_COOLDOWN: float = 1.0
 const _LOCAL_ESCAPE_HOLD_DURATION: float = 0.35
+const _LOCAL_ESCAPE_TIMEOUT: float = 0.9
+const _LOCAL_ESCAPE_NO_PROGRESS_TIMEOUT: float = 0.3
+const _LOCAL_ESCAPE_PROGRESS_EPSILON: float = 2.0
 const _BODY_SPRITE_VISUAL_SCALE := Vector2(1.5, 1.5)
 const _BODY_SPRITE_VISUAL_POSITION := Vector2(0.0, 12.0)
 const _RULER_MARKER_VISUAL_POSITION := Vector2(0.0, -8.0)
@@ -697,17 +703,33 @@ func _process_local_unstuck(
 		_local_escape_hold_timer = maxf(0.0, _local_escape_hold_timer - delta)
 
 	if not has_active_goal or _attack_target != null:
+		if _local_escape_active:
+			_finish_local_escape("goal_inactive", target_point, has_active_goal, repath_after_escape)
 		_reset_local_unstuck_progress()
 		return false
 
 	if _local_escape_active:
 		var escape_distance := global_position.distance_to(_local_escape_target)
 		if escape_distance <= _LOCAL_ESCAPE_REACHED_EPSILON:
-			_local_escape_active = false
-			_local_stuck_timer = 0.0
-			_last_local_progress_position = global_position
-			if repath_after_escape:
-				_repath_to(target_point)
+			_finish_local_escape("reached", target_point, has_active_goal, repath_after_escape)
+			return false
+		if role == UnitRole.RULER and not _is_search_target_valid(_local_escape_target):
+			_finish_local_escape("target_invalid", target_point, has_active_goal, repath_after_escape)
+			return false
+		_local_escape_elapsed += delta
+		if _last_local_escape_progress_position == Vector2.INF:
+			_last_local_escape_progress_position = global_position
+		var escape_moved_distance := global_position.distance_to(_last_local_escape_progress_position)
+		_last_local_escape_progress_position = global_position
+		if escape_moved_distance <= _LOCAL_ESCAPE_PROGRESS_EPSILON:
+			_local_escape_progress_timer += delta
+		else:
+			_local_escape_progress_timer = 0.0
+		if _local_escape_elapsed >= _LOCAL_ESCAPE_TIMEOUT:
+			_finish_local_escape("timeout", target_point, has_active_goal, repath_after_escape)
+			return false
+		if _local_escape_progress_timer >= _LOCAL_ESCAPE_NO_PROGRESS_TIMEOUT:
+			_finish_local_escape("no_progress", target_point, has_active_goal, repath_after_escape)
 			return false
 		var escape_direction := global_position.direction_to(_local_escape_target)
 		velocity = escape_direction * move_speed
@@ -773,6 +795,9 @@ func _start_local_escape_step(target_point: Vector2) -> bool:
 	_local_escape_active = true
 	_local_escape_cooldown = _LOCAL_ESCAPE_COOLDOWN
 	_local_escape_hold_timer = _LOCAL_ESCAPE_HOLD_DURATION
+	_local_escape_elapsed = 0.0
+	_local_escape_progress_timer = 0.0
+	_last_local_escape_progress_position = global_position
 	_local_stuck_timer = 0.0
 	_log_event("UNIT_UNSTUCK_ESCAPE", {
 		"unit": name,
@@ -783,11 +808,54 @@ func _start_local_escape_step(target_point: Vector2) -> bool:
 
 func _reset_local_unstuck_progress() -> void:
 	_last_local_progress_position = Vector2.INF
+	_last_local_escape_progress_position = Vector2.INF
 	_local_stuck_timer = 0.0
 	_local_escape_active = false
+	_local_escape_target = Vector2.ZERO
+	_local_escape_cooldown = 0.0
 	_local_escape_hold_timer = 0.0
 	_local_escape_latch = false
+	_local_escape_elapsed = 0.0
+	_local_escape_progress_timer = 0.0
 	_local_stuck_detected_logged = false
+
+func _finish_local_escape(
+	reason: String,
+	target_point: Vector2,
+	has_active_goal: bool,
+	repath_after_escape: bool
+) -> void:
+	_local_escape_active = false
+	_local_escape_target = Vector2.ZERO
+	_local_escape_cooldown = 0.0
+	_local_escape_hold_timer = 0.0
+	_local_escape_latch = false
+	_local_escape_elapsed = 0.0
+	_local_escape_progress_timer = 0.0
+	_last_local_escape_progress_position = Vector2.INF
+	_local_stuck_timer = 0.0
+	_last_local_progress_position = global_position
+	_local_stuck_detected_logged = false
+	_log_event("UNIT_ESCAPE_FINISHED", {
+		"unit": name,
+		"role": _role_to_text(role),
+		"reason": reason,
+	})
+
+	if repath_after_escape and has_active_goal and _attack_target == null:
+		_repath_to(target_point)
+
+	if role == UnitRole.RULER and _attack_target == null and not _disband_cooldown_active:
+		_has_active_search_order = false
+		_has_ruler_search_point = false
+		_path = PackedVector2Array()
+		_path_index = 0
+		_current_search_target = global_position
+		_ruler_search_point = global_position
+		_ruler_search_stuck_timer = 0.0
+		_last_search_progress_position = Vector2.INF
+		_next_search_decision_time = 0.0
+		_next_search_retry_time = 0.0
 
 func _update_guard_aggro_target() -> void:
 	var ruler := _get_ruler()
