@@ -40,6 +40,8 @@ enum UnitRole {
 @export var ruler_search_move_distance_max: float = 420.0
 @export var disband_cooldown_duration: float = 60.0
 @export var guard_target_reacquire_delay: float = 0.5
+@export var guard_target_switch_cooldown: float = 0.45
+@export var guard_chase_hysteresis: float = 36.0
 
 var current_hp: float = 0.0
 
@@ -58,6 +60,8 @@ var _disband_cooldown_active: bool = false
 var _disband_cooldown_timer: float = 0.0
 var _guard_return_logged: bool = false
 var _guard_target_reacquire_timer: float = 0.0
+var _guard_target_switch_timer: float = 0.0
+var _last_valid_ruler_search_point: Vector2 = Vector2.ZERO
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -103,6 +107,8 @@ func _physics_process(delta: float) -> void:
 
 	if _guard_target_reacquire_timer > 0.0:
 		_guard_target_reacquire_timer = maxf(0.0, _guard_target_reacquire_timer - delta)
+	if _guard_target_switch_timer > 0.0:
+		_guard_target_switch_timer = maxf(0.0, _guard_target_switch_timer - delta)
 
 	if _disband_cooldown_active:
 		_process_disband_cooldown(delta)
@@ -176,6 +182,8 @@ func set_attack_target(target: Unit, reason: String = "") -> void:
 		"target": _attack_target.name,
 		"reason": reason if not reason.is_empty() else "-",
 	})
+	if role == UnitRole.ROYAL_GUARD and previous_target != null and previous_target != _attack_target:
+		_guard_target_switch_timer = guard_target_switch_cooldown
 	_repath_cooldown = 0.0
 	_path = PackedVector2Array()
 	_path_index = 0
@@ -245,7 +253,10 @@ func _process_guard_logic(delta: float) -> void:
 		return
 
 	if _attack_target != null:
-		if global_position.distance_to(ruler.global_position) > guard_chase_limit:
+		var guard_to_ruler_distance := global_position.distance_to(ruler.global_position)
+		var target_to_ruler_distance := _attack_target.global_position.distance_to(ruler.global_position)
+		if guard_to_ruler_distance > guard_chase_limit + guard_chase_hysteresis \
+		and target_to_ruler_distance > guard_chase_limit + guard_chase_hysteresis:
 			set_attack_target(null, "guard_chase_limit")
 			if not _guard_return_logged:
 				_log_event("GUARD_RETURN_TO_RULER", {
@@ -415,14 +426,23 @@ func _process_ruler_search_movement(delta: float) -> void:
 	_follow_current_path()
 
 func _pick_ruler_search_point() -> Vector2:
+	var world: Node = get_parent()
 	var nearest_enemy := _find_nearest_enemy_any_distance()
 	if nearest_enemy != null:
-		return nearest_enemy.global_position
+		var enemy_point := nearest_enemy.global_position
+		if world != null and world.has_method("get_clamped_ruler_search_point"):
+			enemy_point = world.get_clamped_ruler_search_point(global_position, enemy_point, _last_valid_ruler_search_point)
+		_last_valid_ruler_search_point = enemy_point
+		return enemy_point
 
 	var angle := _rng.randf_range(0.0, TAU)
 	var distance := _rng.randf_range(ruler_search_move_distance_min, ruler_search_move_distance_max)
 	var offset := Vector2.RIGHT.rotated(angle) * distance
-	return global_position + offset
+	var roam_point := global_position + offset
+	if world != null and world.has_method("get_clamped_ruler_search_point"):
+		roam_point = world.get_clamped_ruler_search_point(global_position, roam_point, _last_valid_ruler_search_point)
+	_last_valid_ruler_search_point = roam_point
+	return roam_point
 
 func _update_guard_aggro_target() -> void:
 	var ruler := _get_ruler()
@@ -433,20 +453,29 @@ func _update_guard_aggro_target() -> void:
 	if _attack_target == null and _guard_target_reacquire_timer > 0.0:
 		return
 
+	var current_target := get_attack_target()
+	if current_target != null and _is_enemy(current_target):
+		var current_target_distance_to_ruler := current_target.global_position.distance_to(ruler.global_position)
+		if current_target_distance_to_ruler <= guard_chase_limit + guard_chase_hysteresis:
+			return
+
 	var ruler_attacker := ruler.get_last_valid_attacker()
 	if ruler_attacker != null and _is_enemy(ruler_attacker):
 		if ruler.global_position.distance_to(ruler_attacker.global_position) <= guard_chase_limit:
+			if _guard_target_switch_timer > 0.0 and current_target != null and current_target != ruler_attacker:
+				return
 			set_attack_target(ruler_attacker, "protect_ruler_attacker")
 			return
 
 	var nearest_threat := _find_nearest_enemy_to_point_in_range(ruler.global_position, guard_protect_radius)
 	if nearest_threat != null:
+		if _guard_target_switch_timer > 0.0 and current_target != null and current_target != nearest_threat:
+			return
 		set_attack_target(nearest_threat, "guard_protect_radius")
 		return
 
-	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
-		if global_position.distance_to(ruler.global_position) <= guard_chase_limit:
-			return
+	if current_target != null and global_position.distance_to(ruler.global_position) <= guard_chase_limit + guard_chase_hysteresis:
+		return
 
 	set_attack_target(null, "guard_out_of_chase_range")
 	_path = PackedVector2Array()

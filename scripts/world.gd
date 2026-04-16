@@ -2,17 +2,31 @@ extends Node2D
 
 @export var world_stabilize_interval: float = 0.4
 @export var debug_hud_update_interval: float = 0.15
+@export var ruler_search_bounds: Rect2 = Rect2(-1400.0, -1300.0, 5000.0, 3900.0)
+@export var periodic_free_knight_spawn_interval: float = 22.0
+@export var periodic_free_knight_spawn_enabled: bool = true
+@export var periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array([
+	Vector2(-1080.0, 1820.0),
+	Vector2(2200.0, 1740.0),
+	Vector2(220.0, -900.0),
+	Vector2(1040.0, 2320.0),
+])
 
 var _stabilize_cooldown: float = 0.0
 var _debug_hud_cooldown: float = 0.0
 var _debug_events: Array[String] = []
 var _debug_event_limit: int = 10
 var _debug_focus_unit: Unit = null
+var _periodic_spawn_cooldown: float = 0.0
+var _spawn_sequence_index: int = 0
+
+const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel
 
 func _ready() -> void:
+	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_stabilize_world_state()
 	_refresh_debug_hud()
 
@@ -47,12 +61,29 @@ func _process(delta: float) -> void:
 		_debug_hud_cooldown = debug_hud_update_interval
 		_refresh_debug_hud()
 
+	_process_periodic_free_knight_spawn(delta)
+
 func find_path(from_position: Vector2, to_position: Vector2) -> PackedVector2Array:
 	var nav_map := get_world_2d().navigation_map
 	var path := NavigationServer2D.map_get_path(nav_map, from_position, to_position, false)
 	if path.is_empty():
 		return PackedVector2Array([to_position])
 	return path
+
+func get_clamped_ruler_search_point(from_position: Vector2, desired_point: Vector2, fallback_point: Vector2 = Vector2.ZERO) -> Vector2:
+	var clamped := _clamp_to_ruler_search_bounds(desired_point)
+	if _is_point_navigable_from(from_position, clamped):
+		return clamped
+
+	var nearby_candidate := _find_navigable_nearby_point(from_position, clamped)
+	if nearby_candidate != Vector2.INF:
+		return nearby_candidate
+
+	var fallback_clamped := _clamp_to_ruler_search_bounds(fallback_point)
+	if _is_point_navigable_from(from_position, fallback_clamped):
+		return fallback_clamped
+
+	return _clamp_to_ruler_search_bounds(from_position)
 
 func on_ruler_attacked(ruler: Unit, attacker: Unit) -> void:
 	if not _is_valid_live_unit(ruler):
@@ -259,3 +290,71 @@ func _role_to_text(role: Unit.UnitRole) -> String:
 			return "ROYAL_GUARD"
 		_:
 			return "FREE_KNIGHT"
+
+func _clamp_to_ruler_search_bounds(point: Vector2) -> Vector2:
+	var max_x := ruler_search_bounds.position.x + ruler_search_bounds.size.x
+	var max_y := ruler_search_bounds.position.y + ruler_search_bounds.size.y
+	return Vector2(
+		clampf(point.x, ruler_search_bounds.position.x, max_x),
+		clampf(point.y, ruler_search_bounds.position.y, max_y)
+	)
+
+func _is_point_navigable_from(from_position: Vector2, target_position: Vector2) -> bool:
+	var nav_map := get_world_2d().navigation_map
+	var path := NavigationServer2D.map_get_path(nav_map, from_position, target_position, false)
+	return not path.is_empty()
+
+func _find_navigable_nearby_point(from_position: Vector2, center_point: Vector2) -> Vector2:
+	var probe_distances: Array[float] = [40.0, 90.0, 150.0, 220.0]
+	var direction_count := 8
+	for distance in probe_distances:
+		for index in direction_count:
+			var angle := (TAU / float(direction_count)) * float(index)
+			var offset := Vector2.RIGHT.rotated(angle) * distance
+			var candidate := _clamp_to_ruler_search_bounds(center_point + offset)
+			if _is_point_navigable_from(from_position, candidate):
+				return candidate
+	return Vector2.INF
+
+func _process_periodic_free_knight_spawn(delta: float) -> void:
+	if not periodic_free_knight_spawn_enabled:
+		return
+	if periodic_free_knight_spawn_points.is_empty():
+		return
+	if periodic_free_knight_spawn_interval <= 0.0:
+		return
+
+	_periodic_spawn_cooldown -= delta
+	if _periodic_spawn_cooldown > 0.0:
+		return
+
+	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
+	_spawn_free_knight_at_next_point()
+
+func _spawn_free_knight_at_next_point() -> void:
+	if _FREE_KNIGHT_SCENE == null:
+		return
+	if periodic_free_knight_spawn_points.is_empty():
+		return
+
+	var spawn_point := periodic_free_knight_spawn_points[_spawn_sequence_index % periodic_free_knight_spawn_points.size()]
+	_spawn_sequence_index += 1
+
+	var spawned_node := _FREE_KNIGHT_SCENE.instantiate()
+	if not (spawned_node is Unit):
+		if spawned_node != null:
+			spawned_node.queue_free()
+		return
+
+	var spawned_unit: Unit = spawned_node
+	spawned_unit.name = "SpawnedFreeKnight_%d" % Time.get_ticks_msec()
+	spawned_unit.global_position = _clamp_to_ruler_search_bounds(spawn_point)
+	spawned_unit.is_player_controlled = false
+	spawned_unit.set_role(Unit.UnitRole.FREE_KNIGHT)
+	spawned_unit.faction_id = -1
+	add_child(spawned_unit)
+
+	log_event("FREE_KNIGHT_SPAWNED", {
+		"unit": spawned_unit.name,
+		"point": spawned_unit.global_position,
+	})
