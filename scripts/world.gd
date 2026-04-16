@@ -46,24 +46,35 @@ func _ready() -> void:
 	world_map, Vector2(640.0, 360.0)
 	)
 
-	var nav_region = find_child("NavigationRegion2D", true, false)
+	var nav_region := _find_navigation_region(self)
 
 	if nav_region == null:
-		print("NAV_DIAG no NavigationRegion2D found under ", get_path(),
-			" world_center=", world_center,
-			" world_map=", world_map)
+		print("NAV_DIAG no NavigationRegion2D-derived node found under ", get_path())
 	else:
 		var region_rid = nav_region.get_region_rid()
 		var region_p1 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
 		var region_p2 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
 		var region_p3 = NavigationServer2D.region_get_random_point(region_rid, 1, false)
 
-		print("NAV_DIAG world_center=", world_center,
+		print("NAV_DIAG nav_region_path=", nav_region.get_path(),
+			" region_rid=", region_rid,
+			" world_center=", world_center,
 			" region_p1=", region_p1,
 			" region_p2=", region_p2,
 			" region_p3=", region_p3)
 
 	_prepare_periodic_free_knight_spawn_points()
+
+func _find_navigation_region(root: Node) -> NavigationRegion2D:
+	if root == null:
+		return null
+	for child in root.get_children():
+		if child is NavigationRegion2D:
+			return child
+		var nested_match := _find_navigation_region(child)
+		if nested_match != null:
+			return nested_match
+	return null
 
 func log_event(event_type: String, data: Dictionary) -> void:
 	if event_type.is_empty():
