@@ -22,6 +22,10 @@ var _spawn_sequence_index: int = 0
 var _validated_periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array()
 
 const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
+const _SPAWN_POINT_DUPLICATE_EPSILON: float = 8.0
+const _SPAWN_POINT_MIN_SPACING: float = 120.0
+const _SPAWN_POINT_MIN_POOL_SIZE: int = 3
+
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel
@@ -134,8 +138,8 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 		"guards_freed": freed_guard_count,
 	})
 
-	var killer_is_valid_candidate := _is_valid_live_unit(killer) \
-		and killer != dead_ruler \
+	var killer_is_valid := _is_valid_live_unit(killer) and killer != dead_ruler
+	var killer_is_valid_candidate := killer_is_valid \
 		and not killer.is_disband_cooldown_active() \
 		and killer.role != Unit.UnitRole.ROYAL_GUARD
 
@@ -145,12 +149,21 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 			"old_ruler": dead_ruler.name,
 			"new_ruler": killer.name,
 		})
-	elif _is_valid_live_unit(killer) and killer != dead_ruler and killer.role == Unit.UnitRole.ROYAL_GUARD:
-		log_event("RULER_SUCCESSION_BLOCKED_ROYAL_GUARD", {
-			"old_ruler": dead_ruler.name,
-			"killer": killer.name,
-		})
-	elif _is_valid_live_unit(killer) and killer != dead_ruler and killer.is_disband_cooldown_active():
+	elif killer_is_valid and killer.role == Unit.UnitRole.ROYAL_GUARD:
+		var guard_owner_ruler := _get_guard_ruler(killer)
+		if _is_valid_live_unit(guard_owner_ruler):
+			guard_owner_ruler.set_role(Unit.UnitRole.RULER)
+			log_event("RULER_SUCCESSION_VIA_GUARD", {
+				"old_ruler": dead_ruler.name,
+				"killer": killer.name,
+				"new_ruler": guard_owner_ruler.name,
+			})
+		else:
+			log_event("RULER_SUCCESSION_BLOCKED_ROYAL_GUARD", {
+				"old_ruler": dead_ruler.name,
+				"killer": killer.name,
+			})
+	elif killer_is_valid and killer.is_disband_cooldown_active():
 		log_event("RULER_SUCCESSION_BLOCKED_COOLDOWN", {
 			"old_ruler": dead_ruler.name,
 			"killer": killer.name,
@@ -376,7 +389,51 @@ func _prepare_periodic_free_knight_spawn_points() -> void:
 				"source_point": source_point,
 			})
 			continue
+		if _is_spawn_point_near_duplicate(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
+			continue
+		if _is_spawn_point_too_close(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
+			continue
 		_validated_periodic_free_knight_spawn_points.append(validated_spawn_point)
+
+	if _validated_periodic_free_knight_spawn_points.size() < _SPAWN_POINT_MIN_POOL_SIZE:
+		log_event("FREE_KNIGHT_SPAWN_POOL_DEGENERATE", {
+			"validated_points": _validated_periodic_free_knight_spawn_points.size(),
+		})
+		_apply_spawn_pool_fallback_points()
+
+func _is_spawn_point_near_duplicate(points: PackedVector2Array, candidate: Vector2) -> bool:
+	for point in points:
+		if point.distance_to(candidate) <= _SPAWN_POINT_DUPLICATE_EPSILON:
+			return true
+	return false
+
+func _is_spawn_point_too_close(points: PackedVector2Array, candidate: Vector2) -> bool:
+	for point in points:
+		if point.distance_to(candidate) < _SPAWN_POINT_MIN_SPACING:
+			return true
+	return false
+
+func _apply_spawn_pool_fallback_points() -> void:
+	var center := ruler_search_bounds.position + (ruler_search_bounds.size * 0.5)
+	var fallback_sources: Array[Vector2] = [
+		center,
+		ruler_search_bounds.position + Vector2(160.0, 160.0),
+		ruler_search_bounds.position + Vector2(ruler_search_bounds.size.x - 160.0, 160.0),
+		ruler_search_bounds.position + Vector2(160.0, ruler_search_bounds.size.y - 160.0),
+		ruler_search_bounds.position + Vector2(ruler_search_bounds.size.x - 160.0, ruler_search_bounds.size.y - 160.0),
+	]
+
+	for source_point in fallback_sources:
+		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
+		if validated_spawn_point == Vector2.INF:
+			continue
+		if _is_spawn_point_near_duplicate(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
+			continue
+		if _is_spawn_point_too_close(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
+			continue
+		_validated_periodic_free_knight_spawn_points.append(validated_spawn_point)
+		if _validated_periodic_free_knight_spawn_points.size() >= _SPAWN_POINT_MIN_POOL_SIZE:
+			break
 
 func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
 	var clamped_point := _clamp_to_ruler_search_bounds(raw_spawn_point)
