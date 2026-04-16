@@ -6,10 +6,10 @@ extends Node2D
 @export var periodic_free_knight_spawn_interval: float = 22.0
 @export var periodic_free_knight_spawn_enabled: bool = true
 @export var periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array([
-	Vector2(-1080.0, 1820.0),
-	Vector2(2200.0, 1740.0),
-	Vector2(220.0, -900.0),
-	Vector2(1040.0, 2320.0),
+	Vector2(-1000.0, 2000.0),
+	Vector2(120.0, 120.0),
+	Vector2(1330.0, 120.0),
+	Vector2(730.0, 980.0),
 ])
 
 var _stabilize_cooldown: float = 0.0
@@ -19,6 +19,7 @@ var _debug_event_limit: int = 10
 var _debug_focus_unit: Unit = null
 var _periodic_spawn_cooldown: float = 0.0
 var _spawn_sequence_index: int = 0
+var _validated_periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array()
 
 const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 
@@ -26,6 +27,7 @@ const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel
 
 func _ready() -> void:
+	_prepare_periodic_free_knight_spawn_points()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_stabilize_world_state()
 	_refresh_debug_hud()
@@ -324,7 +326,7 @@ func _find_navigable_nearby_point(from_position: Vector2, center_point: Vector2)
 func _process_periodic_free_knight_spawn(delta: float) -> void:
 	if not periodic_free_knight_spawn_enabled:
 		return
-	if periodic_free_knight_spawn_points.is_empty():
+	if _validated_periodic_free_knight_spawn_points.is_empty():
 		return
 	if periodic_free_knight_spawn_interval <= 0.0:
 		return
@@ -339,18 +341,11 @@ func _process_periodic_free_knight_spawn(delta: float) -> void:
 func _spawn_free_knight_at_next_point() -> void:
 	if _FREE_KNIGHT_SCENE == null:
 		return
-	if periodic_free_knight_spawn_points.is_empty():
+	if _validated_periodic_free_knight_spawn_points.is_empty():
 		return
 
-	var spawn_point := periodic_free_knight_spawn_points[_spawn_sequence_index % periodic_free_knight_spawn_points.size()]
+	var spawn_point := _validated_periodic_free_knight_spawn_points[_spawn_sequence_index % _validated_periodic_free_knight_spawn_points.size()]
 	_spawn_sequence_index += 1
-	var validated_spawn_point := _resolve_valid_spawn_point(spawn_point)
-	if validated_spawn_point == Vector2.INF:
-		log_event("FREE_KNIGHT_SPAWN_SKIPPED", {
-			"reason": "invalid_spawn_point",
-			"source_point": spawn_point,
-		})
-		return
 
 	var spawned_node := _FREE_KNIGHT_SCENE.instantiate()
 	if not (spawned_node is Unit):
@@ -363,13 +358,25 @@ func _spawn_free_knight_at_next_point() -> void:
 	spawned_unit.is_player_controlled = false
 	spawned_unit.faction_id = -1
 	add_child(spawned_unit)
-	spawned_unit.global_position = validated_spawn_point
+	spawned_unit.global_position = spawn_point
 	spawned_unit.set_role(Unit.UnitRole.FREE_KNIGHT)
 
 	log_event("FREE_KNIGHT_SPAWNED", {
 		"unit": spawned_unit.name,
 		"point": spawned_unit.global_position,
 	})
+
+func _prepare_periodic_free_knight_spawn_points() -> void:
+	_validated_periodic_free_knight_spawn_points = PackedVector2Array()
+	for source_point in periodic_free_knight_spawn_points:
+		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
+		if validated_spawn_point == Vector2.INF:
+			log_event("FREE_KNIGHT_SPAWN_POINT_INVALID", {
+				"reason": "invalid_spawn_point",
+				"source_point": source_point,
+			})
+			continue
+		_validated_periodic_free_knight_spawn_points.append(validated_spawn_point)
 
 func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
 	var clamped_point := _clamp_to_ruler_search_bounds(raw_spawn_point)
