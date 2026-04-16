@@ -1,80 +1,167 @@
 # AGENTS.md
 
-## Project
-Kingslayer is a Godot 4 prototype for an isometric 2D top-down conquest game with click-to-move movement, melee combat, rulers, royal guards, territory control, loot, and winner-takes-all ruler succession.
+## Purpose
 
-## Tech constraints
-- Engine: Godot 4
-- Language: GDScript only
-- No C#
-- Keep all code Godot-4-conformant
-- Do not use deprecated Godot 3 patterns unless explicitly requested
-- Prefer small, readable scripts over overengineered abstractions
+This file tells coding agents how to work in this repository.
+
+It does **not** define the game design in full.
+It defines workflow, scope control, source-of-truth order, and implementation discipline.
+
+---
+
+## Source of truth
+
+Use this order when making decisions:
+
+1. The explicit user task in the current prompt
+2. `RULES_v1.md`
+3. `DESIGN.md`
+4. The live codebase
+5. `README.md`
+
+If two sources conflict:
+
+- `RULES_v1.md` beats `DESIGN.md`
+- `DESIGN.md` beats `README.md`
+- `README.md` is onboarding only and may lag behind the code
+- Never reintroduce old architecture just because it appears in older docs
+
+If there is tension between docs and code, preserve the current hard rules and make the smallest change that satisfies the task.
+
+---
+
+## Current project reality
+
+This prototype is currently **actor-centric**, not manager-centric.
+
+The main live gameplay logic is concentrated in:
+
+- `scripts/world.gd`
+- `scripts/units/unit.gd`
+
+Do **not** create new manager systems, kingdom systems, loot frameworks, or deep abstractions unless the user explicitly asks for them.
+
+Do **not** revive placeholder architecture from older project ideas unless the current task explicitly requires it.
+
+---
 
 ## Working style
-- Make small, focused changes
-- Respect the existing project structure
-- Do not invent large new systems unless explicitly requested
-- Do not rename existing nodes, scenes, or files without a strong reason
-- Avoid scope creep
-- Prefer direct implementation over long explanations
-- Always preserve a playable state if possible
 
-## Architecture rules
-- Keep data, simulation, and presentation separated where practical
-- Do not build a full ECS/framework unless explicitly requested
-- Favor simple Godot scene composition and small scripts
-- Only introduce managers/components when they clearly reduce complexity
-- Avoid hardcoded `get_parent().get_node(...)` chains when signals or exported references are cleaner
+- Make the smallest viable change that solves the task
+- Prefer patching existing logic over introducing new systems
+- Preserve working behavior unless the task explicitly changes it
+- Keep logic local and readable
+- Avoid speculative refactors
+- Avoid architecture expansion
+- Avoid “preparing for the future” unless the user asked for that directly
 
-## Scene and file discipline
-- Change only the files needed for the requested task
-- Do not patch `.tscn` files carelessly with duplicated node/property blocks
-- Each node in `.tscn` files must have a clean, valid block
-- Avoid duplicate property assignments like multiple `polygon =` lines in the same node unless intentionally overwriting and clearly correct
-- Prefer replacing a broken scene cleanly over repeatedly layering patches on top of it
+---
 
-## Input and gameplay rules
-- Click-to-move is the control model
-- The game is top-down/isometric 2D
-- Movement and collision must feel stable before adding combat
-- Do not add combat, AI, loot, camera logic, or kingdom logic unless the task explicitly asks for it
-- Pathfinding/navigation should be robust before building combat on top of it
+## Scope discipline
 
-## Navigation rules
-- Use Godot 4 navigation APIs only
-- Prefer clear, debuggable navigation setups
-- Avoid fragmented navmeshes when a single connected navigation region with holes is more stable
-- Respect the existing world geometry
-- Do not invent arbitrary blocker geometry if the scene already contains it
+Unless explicitly requested, do **not** add:
 
-## Code quality
-- Keep scripts short and focused
-- Use clear names
-- Remove dead or redundant logic when replacing it
-- Do not leave half-implemented alternative paths in the same script
-- Prefer robust minimal solutions over ambitious fragile ones
+- new managers
+- new scenes
+- new UI systems
+- new camera systems
+- new save/load systems
+- loot systems
+- inventory systems
+- kingdom simulation layers
+- large refactors
+- broad renames
+- new frameworks
 
-## Output format for tasks
-For each task, provide:
-1. A short summary of what changed
-2. Which files changed
-3. What to test in Godot
-4. Any known limitation that still remains
+If a task can be completed inside an existing file, do it there.
 
-## Never do this unless explicitly asked
-- Add story, quests, diplomacy, dynasty systems, children, or meta progression
-- Add multiplayer
-- Add advanced UI polish
-- Add final art pipelines
-- Add unnecessary debug visuals to final scenes
-- Refactor unrelated systems
+---
 
-## Priority order
-When in doubt, prioritize:
-1. Playability
-2. Stability
-3. Simplicity
-4. Readability
-5. Extensibility
-6. Visual polish
+## Gameplay-rule discipline
+
+`RULES_v1.md` contains the hard gameplay invariants for the current prototype.
+
+Treat those rules as binding.
+
+`DESIGN.md` contains target-state ideas and future mechanics.
+Do **not** silently implement design ideas from `DESIGN.md` unless the task explicitly asks for them.
+
+Example:
+- If `DESIGN.md` mentions companions, multi-kingdom rulers, or loot, that does **not** mean those systems already exist
+- Do not write code as if planned systems are already live
+
+---
+
+## File discipline
+
+When possible:
+
+- `scripts/world.gd` owns world-level coordination
+- `scripts/units/unit.gd` owns unit behavior
+- scenes should stay simple
+- avoid spreading one small mechanic across many files
+
+Before adding a new file, ask:
+1. Is this required?
+2. Can the change stay inside the existing prototype structure?
+3. Will a new file make Codex more or less likely to drift?
+
+Default answer: keep it in the existing files.
+
+---
+
+## Allowed change pattern
+
+Preferred order:
+
+1. inspect the relevant existing file(s)
+2. identify the smallest stable patch point
+3. change only what is required
+4. preserve existing logs and debugging signals where practical
+5. summarize exactly what changed
+
+---
+
+## Logging and debugging
+
+Do not remove useful structured debug logs unless the task explicitly asks for cleanup.
+
+If you add new behavior that affects combat, succession, roaming, guards, cooldowns, or spawning, preserve observability.
+
+---
+
+## Rules for ambiguity
+
+If the task is ambiguous:
+
+- do not invent a large system
+- do not fill gaps with speculative architecture
+- choose the smallest interpretation consistent with `RULES_v1.md`
+- keep future-facing ideas in `DESIGN.md`, not in live code
+
+---
+
+## Out of scope by default
+
+The following are not assumed to exist unless explicitly implemented in code and requested in the task:
+
+- companion role
+- full kingdom layer
+- loot/equipment economy
+- weapon rarity systems
+- persistent dynasties
+- macro strategy systems
+- deep AI planners
+
+---
+
+## Success criterion
+
+A good change in this repo is:
+
+- small
+- local
+- reversible
+- rule-consistent
+- easy to inspect
+- hard to misinterpret later
