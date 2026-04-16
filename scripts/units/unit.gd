@@ -55,6 +55,7 @@ var _ruler_search_point: Vector2 = Vector2.ZERO
 var _has_ruler_search_point: bool = false
 var _disband_cooldown_active: bool = false
 var _disband_cooldown_timer: float = 0.0
+var _guard_return_logged: bool = false
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -84,13 +85,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if clicked_unit != null and world != null and world.has_method("set_debug_focus_unit"):
 			world.set_debug_focus_unit(clicked_unit)
 		if clicked_unit != null and clicked_unit != self and not clicked_unit.is_dead():
-			_attack_target = clicked_unit
-			_path = PackedVector2Array()
-			_path_index = 0
-			_repath_cooldown = 0.0
+			set_attack_target(clicked_unit, "player_click")
 			return
 
-		_attack_target = null
+		set_attack_target(null, "player_move_command")
 		if world != null and world.has_method("find_path"):
 			_path = world.find_path(global_position, get_global_mouse_position())
 			_path_index = 0
@@ -141,13 +139,36 @@ func take_damage(amount: float, attacker: Unit) -> void:
 func is_dead() -> bool:
 	return _is_dead
 
-func set_attack_target(target: Unit) -> void:
+func set_attack_target(target: Unit, reason: String = "") -> void:
 	if _is_dead:
 		return
-	if target == null or not is_instance_valid(target) or target.is_dead() or target == self:
-		_attack_target = null
+
+	var previous_target := get_attack_target()
+	var next_target: Unit = null
+	if target != null and is_instance_valid(target) and not target.is_dead() and target != self:
+		next_target = target
+
+	_attack_target = next_target
+	if _attack_target == null:
+		_guard_return_logged = false
+	if previous_target == _attack_target:
 		return
-	_attack_target = target
+
+	if _attack_target == null:
+		var data := {
+			"unit": name,
+			"target": previous_target.name if previous_target != null else "-",
+		}
+		if not reason.is_empty():
+			data["reason"] = reason
+		_log_event("TARGET_LOST", data)
+		return
+
+	_log_event("TARGET_SET", {
+		"unit": name,
+		"target": _attack_target.name,
+		"reason": reason if not reason.is_empty() else "-",
+	})
 	_repath_cooldown = 0.0
 	_path = PackedVector2Array()
 	_path_index = 0
@@ -197,10 +218,14 @@ func clear_guard_assignment() -> void:
 func start_disband_cooldown(duration: float = -1.0) -> void:
 	_disband_cooldown_active = true
 	_disband_cooldown_timer = duration if duration > 0.0 else disband_cooldown_duration
-	_attack_target = null
+	set_attack_target(null, "disband_cooldown_start")
 	_path = PackedVector2Array()
 	_path_index = 0
 	velocity = Vector2.ZERO
+	_log_event("DISBAND_COOLDOWN_START", {
+		"unit": name,
+		"duration": _disband_cooldown_timer,
+	})
 
 func is_disband_cooldown_active() -> bool:
 	return _disband_cooldown_active
@@ -215,10 +240,15 @@ func _process_guard_logic(delta: float) -> void:
 
 	if _attack_target != null:
 		if global_position.distance_to(ruler.global_position) > guard_chase_limit:
-			_attack_target = null
-			_path = PackedVector2Array()
-			_path_index = 0
+			set_attack_target(null, "guard_chase_limit")
+			if not _guard_return_logged:
+				_log_event("GUARD_RETURN_TO_RULER", {
+					"guard": name,
+					"ruler": ruler.name,
+				})
+				_guard_return_logged = true
 		else:
+			_guard_return_logged = false
 			_process_attack_target(delta)
 			return
 
@@ -268,7 +298,7 @@ func _apply_role_visuals() -> void:
 
 func _process_attack_target(delta: float) -> void:
 	if not is_instance_valid(_attack_target) or _attack_target.is_dead() or not _is_enemy(_attack_target):
-		_attack_target = null
+		set_attack_target(null, "target_invalid_or_not_enemy")
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
@@ -289,7 +319,15 @@ func _process_attack_target(delta: float) -> void:
 
 	_attack_cooldown -= delta
 	if _attack_cooldown <= 0.0:
-		_attack_target.take_damage(attack_damage, self)
+		var attacked_unit := _attack_target
+		attacked_unit.take_damage(attack_damage, self)
+		if attacked_unit != null and is_instance_valid(attacked_unit):
+			_log_event("ATTACK_HIT", {
+				"attacker": name,
+				"target": attacked_unit.name,
+				"damage": attack_damage,
+				"hp_after": maxf(0.0, attacked_unit.current_hp),
+			})
 		_play_hit_sound()
 		_attack_cooldown = attack_interval
 
@@ -338,7 +376,7 @@ func _update_npc_aggro_target() -> void:
 
 	var nearest_enemy := _find_nearest_enemy_in_range(aggro_radius)
 	if nearest_enemy != null:
-		set_attack_target(nearest_enemy)
+		set_attack_target(nearest_enemy, "npc_auto_aggro")
 
 func _update_ruler_aggro_target() -> void:
 	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
@@ -346,7 +384,7 @@ func _update_ruler_aggro_target() -> void:
 
 	var nearest_enemy := _find_nearest_enemy_in_range(ruler_search_radius)
 	if nearest_enemy != null:
-		set_attack_target(nearest_enemy)
+		set_attack_target(nearest_enemy, "ruler_enemy_spotted")
 		_has_ruler_search_point = false
 
 func _process_ruler_search_movement(delta: float) -> void:
@@ -363,6 +401,10 @@ func _process_ruler_search_movement(delta: float) -> void:
 		_has_ruler_search_point = true
 		_repath_to(_ruler_search_point)
 		_ruler_search_timer = _rng.randf_range(ruler_search_move_interval_min, ruler_search_move_interval_max)
+		_log_event("RULER_SEARCH_MOVE", {
+			"ruler": name,
+			"target_point": _ruler_search_point,
+		})
 
 	_follow_current_path()
 
@@ -379,25 +421,25 @@ func _pick_ruler_search_point() -> Vector2:
 func _update_guard_aggro_target() -> void:
 	var ruler := _get_ruler()
 	if ruler == null:
-		_attack_target = null
+		set_attack_target(null, "guard_lost_ruler")
 		return
 
 	var ruler_attacker := ruler.get_last_valid_attacker()
 	if ruler_attacker != null and _is_enemy(ruler_attacker):
 		if ruler.global_position.distance_to(ruler_attacker.global_position) <= guard_chase_limit:
-			set_attack_target(ruler_attacker)
+			set_attack_target(ruler_attacker, "protect_ruler_attacker")
 			return
 
 	var nearest_threat := _find_nearest_enemy_to_point_in_range(ruler.global_position, guard_protect_radius)
 	if nearest_threat != null:
-		set_attack_target(nearest_threat)
+		set_attack_target(nearest_threat, "guard_protect_radius")
 		return
 
 	if _attack_target != null and is_instance_valid(_attack_target) and not _attack_target.is_dead() and _is_enemy(_attack_target):
 		if global_position.distance_to(ruler.global_position) <= guard_chase_limit:
 			return
 
-	_attack_target = null
+	set_attack_target(null, "guard_out_of_chase_range")
 	_path = PackedVector2Array()
 	_path_index = 0
 
@@ -411,6 +453,9 @@ func _process_disband_cooldown(delta: float) -> void:
 
 	if _disband_cooldown_timer <= 0.0:
 		_disband_cooldown_active = false
+		_log_event("DISBAND_COOLDOWN_END", {
+			"unit": name,
+		})
 
 func _find_nearest_enemy_in_range(radius: float) -> Unit:
 	return _find_nearest_enemy_to_point_in_range(global_position, radius)
@@ -477,7 +522,10 @@ func _die() -> void:
 
 	_is_dead = true
 	var role_at_death := role
-	print("Unit died: ", name)
+	_log_event("UNIT_DIED", {
+		"unit": name,
+		"role_at_death": _role_to_text(role_at_death),
+	})
 
 	if role_at_death == UnitRole.RULER:
 		var world: Node = get_parent()
@@ -485,3 +533,17 @@ func _die() -> void:
 			world.on_ruler_died(self, get_last_valid_attacker(), role_at_death)
 
 	queue_free()
+
+func _log_event(event_type: String, data: Dictionary) -> void:
+	var world: Node = get_parent()
+	if world != null and world.has_method("log_event"):
+		world.log_event(event_type, data)
+
+func _role_to_text(current_role: UnitRole) -> String:
+	match current_role:
+		UnitRole.RULER:
+			return "RULER"
+		UnitRole.ROYAL_GUARD:
+			return "ROYAL_GUARD"
+		_:
+			return "FREE_KNIGHT"
