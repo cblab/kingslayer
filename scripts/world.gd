@@ -96,11 +96,16 @@ func on_ruler_died(dead_ruler: Unit, killer: Unit, role_at_death: Unit.UnitRole 
 		"guards_freed": freed_guard_count,
 	})
 
-	if _is_valid_live_unit(killer) and killer != dead_ruler:
+	if _is_valid_live_unit(killer) and killer != dead_ruler and not killer.is_disband_cooldown_active():
 		killer.set_role(Unit.UnitRole.RULER)
 		log_event("RULER_SUCCESSION", {
 			"old_ruler": dead_ruler.name,
 			"new_ruler": killer.name,
+		})
+	elif _is_valid_live_unit(killer) and killer != dead_ruler and killer.is_disband_cooldown_active():
+		log_event("RULER_SUCCESSION_BLOCKED_COOLDOWN", {
+			"old_ruler": dead_ruler.name,
+			"killer": killer.name,
 		})
 
 	_stabilize_world_state()

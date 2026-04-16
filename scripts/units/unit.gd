@@ -39,6 +39,7 @@ enum UnitRole {
 @export var ruler_search_move_distance_min: float = 180.0
 @export var ruler_search_move_distance_max: float = 420.0
 @export var disband_cooldown_duration: float = 60.0
+@export var guard_target_reacquire_delay: float = 0.5
 
 var current_hp: float = 0.0
 
@@ -56,6 +57,7 @@ var _has_ruler_search_point: bool = false
 var _disband_cooldown_active: bool = false
 var _disband_cooldown_timer: float = 0.0
 var _guard_return_logged: bool = false
+var _guard_target_reacquire_timer: float = 0.0
 
 const _HIT_SOUNDS: Array[AudioStream] = [
 	preload("res://scripts/sound/sword_clash_1.mp3"),
@@ -99,6 +101,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	if _guard_target_reacquire_timer > 0.0:
+		_guard_target_reacquire_timer = maxf(0.0, _guard_target_reacquire_timer - delta)
+
 	if _disband_cooldown_active:
 		_process_disband_cooldown(delta)
 		return
@@ -123,8 +128,6 @@ func take_damage(amount: float, attacker: Unit) -> void:
 
 	if attacker != null and is_instance_valid(attacker) and not attacker.is_dead() and attacker != self:
 		_last_valid_attacker = attacker
-		if _disband_cooldown_active and _attack_target == null and _is_enemy(attacker):
-			set_attack_target(attacker)
 
 	current_hp -= amount
 
@@ -146,6 +149,8 @@ func set_attack_target(target: Unit, reason: String = "") -> void:
 	var previous_target := get_attack_target()
 	var next_target: Unit = null
 	if target != null and is_instance_valid(target) and not target.is_dead() and target != self:
+		if _disband_cooldown_active:
+			return
 		next_target = target
 
 	_attack_target = next_target
@@ -155,6 +160,8 @@ func set_attack_target(target: Unit, reason: String = "") -> void:
 		return
 
 	if _attack_target == null:
+		if role == UnitRole.ROYAL_GUARD and previous_target != null:
+			_guard_target_reacquire_timer = guard_target_reacquire_delay
 		var data := {
 			"unit": name,
 			"target": previous_target.name if previous_target != null else "-",
@@ -218,10 +225,7 @@ func clear_guard_assignment() -> void:
 func start_disband_cooldown(duration: float = -1.0) -> void:
 	_disband_cooldown_active = true
 	_disband_cooldown_timer = duration if duration > 0.0 else disband_cooldown_duration
-	set_attack_target(null, "disband_cooldown_start")
-	_path = PackedVector2Array()
-	_path_index = 0
-	velocity = Vector2.ZERO
+	_clear_active_combat_and_navigation_state("disband_cooldown_start")
 	_log_event("DISBAND_COOLDOWN_START", {
 		"unit": name,
 		"duration": _disband_cooldown_timer,
@@ -424,6 +428,9 @@ func _update_guard_aggro_target() -> void:
 		set_attack_target(null, "guard_lost_ruler")
 		return
 
+	if _attack_target == null and _guard_target_reacquire_timer > 0.0:
+		return
+
 	var ruler_attacker := ruler.get_last_valid_attacker()
 	if ruler_attacker != null and _is_enemy(ruler_attacker):
 		if ruler.global_position.distance_to(ruler_attacker.global_position) <= guard_chase_limit:
@@ -445,11 +452,10 @@ func _update_guard_aggro_target() -> void:
 
 func _process_disband_cooldown(delta: float) -> void:
 	_disband_cooldown_timer = maxf(0.0, _disband_cooldown_timer - delta)
-	if _attack_target != null:
-		_process_attack_target(delta)
-	else:
-		velocity = Vector2.ZERO
-		move_and_slide()
+	if _attack_target != null or _path_index < _path.size():
+		_clear_active_combat_and_navigation_state("disband_cooldown_enforced")
+	velocity = Vector2.ZERO
+	move_and_slide()
 
 	if _disband_cooldown_timer <= 0.0:
 		_disband_cooldown_active = false
@@ -547,3 +553,16 @@ func _role_to_text(current_role: UnitRole) -> String:
 			return "ROYAL_GUARD"
 		_:
 			return "FREE_KNIGHT"
+
+func _clear_active_combat_and_navigation_state(reason: String = "") -> void:
+	if _attack_target != null:
+		set_attack_target(null, reason)
+	_path = PackedVector2Array()
+	_path_index = 0
+	velocity = Vector2.ZERO
+	_repath_cooldown = 0.0
+	_attack_cooldown = 0.0
+	_has_ruler_search_point = false
+	_ruler_search_point = global_position
+	_ruler_search_timer = 0.0
+	_guard_return_logged = false
