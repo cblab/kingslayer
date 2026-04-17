@@ -23,6 +23,7 @@ var _spawn_rng := RandomNumberGenerator.new()
 var _map_layers_ready_logged: bool = false
 var _environment_tileset_state_logged: bool = false
 var _arena_walkable_cells: Array[Vector2i] = []
+var _arena_walkable_cell_set: Dictionary = {}
 var _arena_walkable_rect: Rect2 = Rect2()
 
 const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
@@ -620,19 +621,66 @@ func _set_layer_cell(layer: TileMapLayer, coords: Vector2i, tile_ref: Dictionary
 
 func _refresh_arena_walkable_space() -> void:
 	_arena_walkable_cells.clear()
+	_arena_walkable_cell_set.clear()
 	var layers := _ensure_map_layers()
 	var ground_layer := layers.get("Ground", null) as TileMapLayer
 	if ground_layer == null:
 		ruler_search_bounds = Rect2()
 		return
 
+	var ground_cells := {}
 	for cell in ground_layer.get_used_cells():
-		if _is_walkable_cell(cell):
-			_arena_walkable_cells.append(cell)
+		ground_cells[cell] = true
+
+	var cliff_cells := {}
+	var cliff_layer := layers.get("Cliffs", null) as TileMapLayer
+	if cliff_layer != null:
+		for cell in cliff_layer.get_used_cells():
+			cliff_cells[cell] = true
+
+	var water_cells := {}
+	var water_layer := layers.get("Water", null) as TileMapLayer
+	if water_layer != null:
+		for cell in water_layer.get_used_cells():
+			water_cells[cell] = true
+
+	var blocked_cells := {}
+	for cell in cliff_cells.keys():
+		blocked_cells[cell] = true
+	for cell in water_cells.keys():
+		if ground_cells.has(cell):
+			continue
+		blocked_cells[cell] = true
+
+	for cell in ground_cells.keys():
+		if blocked_cells.has(cell):
+			continue
+		_arena_walkable_cell_set[cell] = true
+		_arena_walkable_cells.append(cell)
+
+	var debug_payload := {
+		"ground_cells": ground_cells.size(),
+		"cliff_cells": cliff_cells.size(),
+		"water_cells": water_cells.size(),
+		"blocked_cells": blocked_cells.size(),
+		"walkable_cells": _arena_walkable_cells.size(),
+	}
+	if not ground_cells.is_empty():
+		debug_payload["ground_sample"] = _sample_vector2i_cells(ground_cells.keys(), 3)
+	if not blocked_cells.is_empty():
+		debug_payload["blocked_sample"] = _sample_vector2i_cells(blocked_cells.keys(), 3)
+	if not _arena_walkable_cells.is_empty():
+		debug_payload["walkable_sample"] = _sample_vector2i_cells(_arena_walkable_cells, 3)
+	log_event("ARENA_WALKABLE_SPACE_COUNTS", debug_payload)
 
 	if _arena_walkable_cells.is_empty():
 		ruler_search_bounds = Rect2()
-		log_event("ARENA_WALKABLE_SPACE_EMPTY", {})
+		log_event("ARENA_WALKABLE_SPACE_EMPTY", {
+			"ground_cells": ground_cells.size(),
+			"blocked_cells": blocked_cells.size(),
+			"water_cells": water_cells.size(),
+			"cliff_cells": cliff_cells.size(),
+		})
 		return
 
 	var min_cell := _arena_walkable_cells[0]
@@ -731,20 +779,19 @@ func _world_to_cell(world_position: Vector2) -> Vector2i:
 	)
 
 func _is_walkable_cell(cell: Vector2i) -> bool:
-	var layers := _ensure_map_layers()
-	var ground_layer := layers.get("Ground", null) as TileMapLayer
-	if ground_layer == null:
-		return false
-	if ground_layer.get_cell_source_id(cell) == -1:
-		return false
+	return _arena_walkable_cell_set.has(cell)
 
-	for blocking_layer_name in ["Water", "Cliffs"]:
-		var blocking_layer := layers.get(blocking_layer_name, null) as TileMapLayer
-		if blocking_layer == null:
+func _sample_vector2i_cells(cells: Array, max_count: int) -> Array[Vector2i]:
+	var sample: Array[Vector2i] = []
+	if max_count <= 0:
+		return sample
+	for cell in cells:
+		if not (cell is Vector2i):
 			continue
-		if blocking_layer.get_cell_source_id(cell) != -1:
-			return false
-	return true
+		sample.append(cell)
+		if sample.size() >= max_count:
+			break
+	return sample
 
 func _is_walkable_world_point(world_position: Vector2) -> bool:
 	return _is_walkable_cell(_world_to_cell(world_position))
