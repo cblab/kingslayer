@@ -261,6 +261,13 @@ func _build_test_island(environment_setup: Dictionary, layers: Dictionary) -> vo
 		})
 		return
 
+	var tile_refs := _pick_test_island_tile_refs(tileset)
+	if tile_refs.is_empty():
+		log_event("TEST_ISLAND_SKIPPED", {
+			"reason": "tileset_has_no_atlas_tiles",
+		})
+		return
+
 	for layer_name in layers.keys():
 		var layer := layers[layer_name] as TileMapLayer
 		if layer == null:
@@ -274,24 +281,13 @@ func _build_test_island(environment_setup: Dictionary, layers: Dictionary) -> vo
 	var props_ground_layer := layers.get("PropsGround", null) as TileMapLayer
 	var props_plateau_layer := layers.get("PropsPlateau", null) as TileMapLayer
 
-	var island_origin := Vector2i(-18, 28)
-	var water_fill := _make_tile_ref(_ENV_SOURCE_WATER, Vector2i.ZERO)
-	var ground_block := _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(0, 0))
-	var ground_strip_vertical := _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(3, 0))
-	var ground_strip_horizontal := _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(0, 3))
-	var ground_corner := _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(3, 3))
-	var cliff_plateau := _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(5, 3))
-	var cliff_column := _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(8, 3))
-	var shadow_blob := _make_tile_ref(_ENV_SOURCE_SHADOW, Vector2i.ZERO)
-
-	_paint_rect(water_layer, Rect2i(island_origin + Vector2i(-3, -2), Vector2i(10, 9)), water_fill)
-	_set_layer_cell(ground_layer, island_origin, ground_block)
-	_set_layer_cell(ground_layer, island_origin + Vector2i(3, 0), ground_strip_vertical)
-	_set_layer_cell(ground_layer, island_origin + Vector2i(0, 3), ground_strip_horizontal)
-	_set_layer_cell(ground_layer, island_origin + Vector2i(3, 3), ground_corner)
-	_set_layer_cell(cliff_layer, island_origin + Vector2i(0, 0), cliff_plateau)
-	_set_layer_cell(cliff_layer, island_origin + Vector2i(3, 0), cliff_column)
-	_set_layer_cell(shadow_layer, island_origin + Vector2i(1, 1), shadow_blob)
+	_paint_rect(water_layer, Rect2i(-14, -12, 31, 25), tile_refs.get("Water", {}))
+	var ground_cells := _build_test_island_ground_cells()
+	_paint_cells(ground_layer, ground_cells, tile_refs.get("Ground", {}))
+	_paint_cells(cliff_layer, _build_boundary_cells(ground_cells), tile_refs.get("Cliffs", {}))
+	_paint_cells(shadow_layer, _build_test_island_shadow_cells(), tile_refs.get("Shadows", {}))
+	_paint_cells(props_ground_layer, _build_test_island_props_ground_cells(), tile_refs.get("PropsGround", {}))
+	_paint_cells(props_plateau_layer, _build_test_island_props_plateau_cells(), tile_refs.get("PropsPlateau", {}))
 
 	for layer_node in [
 		water_layer,
@@ -306,15 +302,107 @@ func _build_test_island(environment_setup: Dictionary, layers: Dictionary) -> vo
 
 	log_event("TEST_ISLAND_BUILT", {
 		"tileset": str(environment_setup.get("source_path", "<runtime>")),
-		"origin": island_origin,
+		"ground_cells": ground_cells.size(),
 	})
 
-func _make_tile_ref(source_id: int, atlas_coords: Vector2i, alternative_tile: int = 0) -> Dictionary:
+func _pick_test_island_tile_refs(tileset: TileSet) -> Dictionary:
+	var atlas_tile_refs := _collect_tileset_atlas_tile_refs(tileset)
+	var single_cell_tile_refs := _collect_tileset_atlas_tile_refs(tileset, true)
+	var tile_refs_pool := single_cell_tile_refs if not single_cell_tile_refs.is_empty() else atlas_tile_refs
+	if tile_refs_pool.is_empty():
+		return {}
+
+	var water_candidates := _filter_tile_refs_by_source_keywords(tile_refs_pool, [
+		"water background",
+		"water",
+	])
+	if water_candidates.is_empty():
+		water_candidates = tile_refs_pool
+	var terrain_candidates := _filter_tile_refs_by_source_keywords(tile_refs_pool, [
+		"tilemap_color3",
+		"tilemap",
+		"terrain",
+	])
+	if terrain_candidates.is_empty():
+		terrain_candidates = tile_refs_pool
+	var shadow_candidates := _filter_tile_refs_by_source_keywords(tile_refs_pool, [
+		"shadow",
+	])
+	if shadow_candidates.is_empty():
+		shadow_candidates = terrain_candidates
+
+	var ground_candidates := _filter_tile_refs_by_atlas_x_range(terrain_candidates, 0, 3)
+	if ground_candidates.is_empty():
+		ground_candidates = terrain_candidates
+
+	var cliff_candidates := _filter_tile_refs_by_atlas_x_range(terrain_candidates, 4, 8)
+	if cliff_candidates.is_empty():
+		cliff_candidates = terrain_candidates
+
 	return {
-		"source_id": source_id,
-		"atlas_coords": atlas_coords,
-		"alternative_tile": alternative_tile,
+		"Water": _get_tile_ref_or_first(water_candidates, 0),
+		"Ground": _get_tile_ref_or_first(ground_candidates, 0),
+		"Cliffs": _get_tile_ref_or_first(cliff_candidates, 0),
+		"Shadows": _get_tile_ref_or_first(shadow_candidates, 0),
+		"PropsGround": _get_tile_ref_or_first(ground_candidates, 1),
+		"PropsPlateau": _get_tile_ref_or_first(cliff_candidates, 1),
 	}
+
+func _collect_tileset_atlas_tile_refs(tileset: TileSet, single_cell_only := false) -> Array[Dictionary]:
+	var refs: Array[Dictionary] = []
+	if tileset == null:
+		return refs
+
+	for source_index in tileset.get_source_count():
+		var source_id := tileset.get_source_id(source_index)
+		var source := tileset.get_source(source_id)
+		if not (source is TileSetAtlasSource):
+			continue
+
+		for tile_index in source.get_tiles_count():
+			var atlas_coords := source.get_tile_id(tile_index)
+			var tile_size_in_atlas := source.get_tile_size_in_atlas(atlas_coords)
+			if single_cell_only and tile_size_in_atlas != Vector2i.ONE:
+				continue
+			var alternative_id := 0
+			if source.get_alternative_tiles_count(atlas_coords) > 0:
+				alternative_id = source.get_alternative_tile_id(atlas_coords, 0)
+			var texture_path := ""
+			if source.texture != null:
+				texture_path = source.texture.resource_path.to_lower()
+			refs.append({
+				"source_id": source_id,
+				"atlas_coords": atlas_coords,
+				"alternative_tile": alternative_id,
+				"tile_size_in_atlas": tile_size_in_atlas,
+				"source_path": texture_path,
+			})
+
+	return refs
+
+func _filter_tile_refs_by_source_keywords(tile_refs: Array[Dictionary], keywords: Array[String]) -> Array[Dictionary]:
+	var matches: Array[Dictionary] = []
+	for tile_ref in tile_refs:
+		var source_path := str(tile_ref.get("source_path", "")).to_lower()
+		for keyword in keywords:
+			if source_path.contains(keyword):
+				matches.append(tile_ref)
+				break
+	return matches
+
+func _filter_tile_refs_by_atlas_x_range(tile_refs: Array[Dictionary], min_x: int, max_x: int) -> Array[Dictionary]:
+	var matches: Array[Dictionary] = []
+	for tile_ref in tile_refs:
+		var atlas_coords := tile_ref.get("atlas_coords", Vector2i.ZERO) as Vector2i
+		if atlas_coords.x < min_x or atlas_coords.x > max_x:
+			continue
+		matches.append(tile_ref)
+	return matches
+
+func _get_tile_ref_or_first(tile_refs: Array[Dictionary], index: int) -> Dictionary:
+	if tile_refs.is_empty():
+		return {}
+	return tile_refs[min(index, tile_refs.size() - 1)]
 
 func _paint_rect(layer: TileMapLayer, rect: Rect2i, tile_ref: Dictionary) -> void:
 	if layer == null or tile_ref.is_empty():
@@ -338,6 +426,88 @@ func _set_layer_cell(layer: TileMapLayer, coords: Vector2i, tile_ref: Dictionary
 		tile_ref.get("atlas_coords", Vector2i(-1, -1)),
 		int(tile_ref.get("alternative_tile", 0))
 	)
+
+func _build_test_island_ground_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var cell_lookup := {}
+
+	for y in range(-6, 8):
+		for x in range(-11, 8):
+			cell_lookup[Vector2i(x, y)] = true
+
+	for y in range(-9, -6):
+		for x in range(-8, 3):
+			cell_lookup[Vector2i(x, y)] = true
+
+	for y in range(-6, -3):
+		for x in range(-12, 7):
+			cell_lookup[Vector2i(x, y)] = true
+
+	for y in range(4, 8):
+		for x in range(-10, 6):
+			cell_lookup[Vector2i(x, y)] = true
+
+	for coords in cell_lookup.keys():
+		cells.append(coords)
+	cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		if a.y == b.y:
+			return a.x < b.x
+		return a.y < b.y
+	)
+	return cells
+
+func _build_boundary_cells(cells: Array[Vector2i]) -> Array[Vector2i]:
+	var lookup := {}
+	for coords in cells:
+		lookup[coords] = true
+
+	var boundary: Array[Vector2i] = []
+	for coords in cells:
+		for neighbor in [
+			Vector2i.LEFT,
+			Vector2i.RIGHT,
+			Vector2i.UP,
+			Vector2i.DOWN,
+		]:
+			if not lookup.has(coords + neighbor):
+				boundary.append(coords)
+				break
+	return boundary
+
+func _build_test_island_shadow_cells() -> Array[Vector2i]:
+	return [
+		Vector2i(-7, -5),
+		Vector2i(-6, -5),
+		Vector2i(-5, -5),
+		Vector2i(-4, -5),
+		Vector2i(-3, -5),
+		Vector2i(-2, -5),
+		Vector2i(-1, -5),
+		Vector2i(0, -5),
+		Vector2i(1, -5),
+		Vector2i(2, -5),
+		Vector2i(-6, -4),
+		Vector2i(-5, -4),
+		Vector2i(-4, -4),
+		Vector2i(-3, -4),
+		Vector2i(-2, -4),
+		Vector2i(-1, -4),
+		Vector2i(0, -4),
+		Vector2i(1, -4),
+	]
+
+func _build_test_island_props_ground_cells() -> Array[Vector2i]:
+	return [
+		Vector2i(-6, 0),
+		Vector2i(-2, 1),
+		Vector2i(3, 2),
+	]
+
+func _build_test_island_props_plateau_cells() -> Array[Vector2i]:
+	return [
+		Vector2i(-4, -7),
+		Vector2i(-1, -7),
+	]
 
 func _process(delta: float) -> void:
 	_stabilize_cooldown -= delta
