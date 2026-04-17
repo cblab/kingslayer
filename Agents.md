@@ -155,6 +155,23 @@ The following are not assumed to exist unless explicitly implemented in code and
 
 ---
 
+## GDScript typing rules
+
+- Use explicit static types for all new or modified GDScript variables, parameters, returns, arrays, and dictionaries.
+- Do not use `:=` when the expression could infer `Variant`.
+- Prefer:
+  - `var x: int = ...`
+  - `var ok: bool = ...`
+  - `var pos: Vector2 = ...`
+  - `var cells: Array[Vector2i] = []`
+  - `var anchors: Dictionary[String, Vector2] = {}`
+- Use integer division `//` for grid math.
+- Avoid mixed int/float expressions in tile and cell calculations.
+- If a value may be ambiguous, cast explicitly with `int()`, `float()`, or `bool()`.
+- Treat Godot parser warnings about type inference as real errors and fix them immediately.
+
+---
+
 ## Success criterion
 
 A good change in this repo is:
