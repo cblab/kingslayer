@@ -6,9 +6,9 @@ extends Node2D
 @export var periodic_free_knight_spawn_interval: float = 22.0
 @export var periodic_free_knight_spawn_enabled: bool = true
 @export var periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array([
-	Vector2(-640.0, 0.0),
-	Vector2(0.0, 640.0),
-	Vector2(960.0, 0.0),
+	Vector2(-896.0, 512.0),
+	Vector2(704.0, 640.0),
+	Vector2(1984.0, 1024.0),
 ])
 @export var environment_tileset: TileSet
 
@@ -325,19 +325,48 @@ func _rebuild_environment_colliders_from_tiles(layers: Dictionary) -> void:
 		colliders_root.remove_child(child)
 		child.queue_free()
 
-	var blocked_cells := {}
-	for layer_name in ["Water", "Cliffs"]:
-		var layer := layers.get(layer_name, null) as TileMapLayer
-		if layer == null:
-			continue
-		for cell in layer.get_used_cells():
-			blocked_cells[cell] = true
+	var blocked_cells := _collect_visible_blocked_cells(layers)
 
 	var collider_count := _add_environment_colliders_for_blocked_cells(colliders_root, blocked_cells)
 	log_event("ENVIRONMENT_COLLIDERS_REBUILT", {
 		"blocked_cell_count": blocked_cells.size(),
 		"collider_count": collider_count,
 	})
+
+func _collect_visible_blocked_cells(layers: Dictionary) -> Dictionary:
+	var blocked_cells := {}
+	var ground_cells := {}
+	var water_total := 0
+	var water_blocking := 0
+	var cliff_total := 0
+
+	var ground_layer := layers.get("Ground", null) as TileMapLayer
+	if ground_layer != null:
+		for cell in ground_layer.get_used_cells():
+			ground_cells[cell] = true
+
+	var cliff_layer := layers.get("Cliffs", null) as TileMapLayer
+	if cliff_layer != null:
+		for cell in cliff_layer.get_used_cells():
+			cliff_total += 1
+			blocked_cells[cell] = true
+
+	var water_layer := layers.get("Water", null) as TileMapLayer
+	if water_layer != null:
+		for cell in water_layer.get_used_cells():
+			water_total += 1
+			if ground_cells.has(cell):
+				continue
+			water_blocking += 1
+			blocked_cells[cell] = true
+
+	log_event("ENV_BLOCK_SOURCE_COUNTS", {
+		"water_total_cells": water_total,
+		"water_blocking_cells": water_blocking,
+		"cliff_cells": cliff_total,
+		"ground_cells": ground_cells.size(),
+	})
+	return blocked_cells
 
 func _add_environment_colliders_for_blocked_cells(parent: Node, blocked_cells: Dictionary) -> int:
 	if parent == null or blocked_cells.is_empty():
@@ -620,17 +649,43 @@ func _find_nearest_walkable_world_point(world_position: Vector2, max_radius_cell
 	return Vector2.INF
 
 func _snap_initial_units_to_walkable_ground() -> void:
+	var checked_units := 0
+	var relocated_units := 0
+
 	for unit in _get_live_units():
+		if not _should_validate_start_position(unit):
+			continue
+		checked_units += 1
+
 		if _is_walkable_world_point(unit.global_position):
 			continue
 		var fallback := _find_nearest_walkable_world_point(unit.global_position, 14)
 		if fallback == Vector2.INF:
+			log_event("UNIT_START_INVALID_UNRESOLVED", {
+				"unit": unit.name,
+				"position": unit.global_position,
+			})
 			continue
 		unit.global_position = fallback
+		relocated_units += 1
 		log_event("UNIT_START_RELOCATED", {
 			"unit": unit.name,
 			"position": unit.global_position,
 		})
+
+	log_event("UNIT_START_VALIDATION", {
+		"checked_units": checked_units,
+		"relocated_units": relocated_units,
+	})
+
+func _should_validate_start_position(unit: Unit) -> bool:
+	if unit == null or not is_instance_valid(unit):
+		return false
+	if unit.is_dead():
+		return false
+	if unit.is_player_controlled:
+		return true
+	return unit.role == Unit.UnitRole.RULER or unit.role == Unit.UnitRole.ROYAL_GUARD
 
 func _process(delta: float) -> void:
 	_stabilize_cooldown -= delta
