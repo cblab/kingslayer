@@ -1120,7 +1120,6 @@ func _clear_active_combat_and_navigation_state(reason: String = "") -> void:
 	_current_search_target = global_position
 	_next_search_decision_time = 0.0
 	_ruler_search_stuck_timer = 0.0
-	_last_search_distance = INF
 	_guard_return_logged = false
 	_guard_follow_reacquire_cooldown = 0.0
 	_last_guard_follow_point = Vector2.INF
