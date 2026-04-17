@@ -1,3 +1,4 @@
+@tool
 extends Node2D
 
 @export var world_stabilize_interval: float = 0.4
@@ -10,7 +11,6 @@ extends Node2D
 	Vector2(704.0, 640.0),
 	Vector2(1984.0, 1024.0),
 ])
-@export var environment_tileset: TileSet
 
 var _stabilize_cooldown: float = 0.0
 var _debug_hud_cooldown: float = 0.0
@@ -21,7 +21,6 @@ var _periodic_spawn_cooldown: float = 0.0
 var _validated_periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array()
 var _spawn_rng := RandomNumberGenerator.new()
 var _map_layers_ready_logged: bool = false
-var _environment_tileset_state_logged: bool = false
 var _arena_walkable_cells: Array[Vector2i] = []
 var _arena_walkable_cell_set: Dictionary = {}
 var _arena_walkable_rect: Rect2 = Rect2()
@@ -37,7 +36,9 @@ const _MAP_LAYERS_ROOT_NAME := "MapLayers"
 const _ENV_COLLIDERS_ROOT_NAME := "TerrainCollision"
 const _ENVIRONMENT_ROOT_Z_INDEX := -100
 const _ENV_TILE_SIZE := Vector2i(64, 64)
-const _DEFAULT_ENV_TILESET_PATH := "res://assets/Terrain/Tileset/environment_tileset.tres"
+const _WATER_TEXTURE_PATH := "res://assets/Terrain/Tileset/Water Background color.png"
+const _GROUND_TEXTURE_PATH := "res://assets/Terrain/Tileset/Tilemap_color3.png"
+const _SHADOW_TEXTURE_PATH := "res://assets/Terrain/Tileset/Shadow.png"
 const _START_ANCHOR_PLAYER := "player"
 const _START_ANCHOR_RULER_RED := "ruler_red"
 const _START_ANCHOR_RULER_GREEN := "ruler_green"
@@ -62,6 +63,10 @@ const _MAP_LAYER_CONFIGS := [
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
 @onready var _debug_events_label: Label = $DebugHud/Panel/Margin/Content/EventsLabel
+
+
+func _enter_tree() -> void:
+	_setup_map_infrastructure()
 
 func _ready() -> void:
 	_spawn_rng.randomize()
@@ -98,9 +103,9 @@ func log_event(event_type: String, data: Dictionary) -> void:
 
 func _setup_map_infrastructure() -> void:
 	var layers := _ensure_map_layers()
-	var environment_setup := _load_environment_tileset()
-	_apply_environment_tileset_to_layers(environment_setup.get("tileset", null) as TileSet)
-	_log_environment_tileset_state(environment_setup)
+	var tileset := _create_base_tileset()
+	_apply_tileset_to_layers(layers, tileset)
+	_ensure_editor_basemap(layers)
 	_log_editor_tilemap_state(layers)
 	_rebuild_environment_colliders_from_tiles(layers)
 
@@ -165,36 +170,38 @@ func _ensure_environment_colliders_root() -> Node2D:
 		environment_root.add_child(colliders_root)
 	return colliders_root
 
-func _load_environment_tileset() -> Dictionary:
-	var result := {
-		"status": "missing",
-		"ready": false,
-		"tileset": null,
-		"source_path": "",
-		"missing_assets": [],
-	}
+func _create_base_tileset() -> TileSet:
+	var tileset := TileSet.new()
+	tileset.tile_size = _ENV_TILE_SIZE
 
-	if environment_tileset != null:
-		result["status"] = "ready"
-		result["ready"] = true
-		result["tileset"] = environment_tileset
-		result["source_path"] = "<exported>"
-		return result
+	var water_source := _create_atlas_source(_WATER_TEXTURE_PATH)
+	var ground_source := _create_atlas_source(_GROUND_TEXTURE_PATH)
+	var shadow_source := _create_atlas_source(_SHADOW_TEXTURE_PATH)
+	var cliff_source := _create_atlas_source(_GROUND_TEXTURE_PATH)
 
-	var default_tileset := load(_DEFAULT_ENV_TILESET_PATH) as TileSet
-	if default_tileset != null:
-		result["status"] = "ready"
-		result["ready"] = true
-		result["tileset"] = default_tileset
-		result["source_path"] = _DEFAULT_ENV_TILESET_PATH
-		return result
+	if water_source != null:
+		tileset.add_source(water_source, 0)
+	if ground_source != null:
+		tileset.add_source(ground_source, 1)
+	if shadow_source != null:
+		tileset.add_source(shadow_source, 2)
+	if cliff_source != null:
+		tileset.add_source(cliff_source, 3)
 
-	result["status"] = "missing"
-	result["missing_assets"] = _get_missing_environment_asset_paths()
-	return result
+	return tileset
 
-func _apply_environment_tileset_to_layers(tileset: TileSet) -> void:
-	var layers := _ensure_map_layers()
+func _create_atlas_source(texture_path: String) -> TileSetAtlasSource:
+	var texture := load(texture_path) as Texture2D
+	if texture == null:
+		return null
+
+	var source := TileSetAtlasSource.new()
+	source.texture = texture
+	source.texture_region_size = _ENV_TILE_SIZE
+	source.create_tile(Vector2i.ZERO)
+	return source
+
+func _apply_tileset_to_layers(layers: Dictionary, tileset: TileSet) -> void:
 	for layer_name in layers.keys():
 		var layer := layers[layer_name] as TileMapLayer
 		if layer == null:
@@ -202,31 +209,42 @@ func _apply_environment_tileset_to_layers(tileset: TileSet) -> void:
 		layer.tile_set = tileset
 		layer.fix_invalid_tiles()
 
-func _log_environment_tileset_state(environment_setup: Dictionary) -> void:
-	if _environment_tileset_state_logged:
+func _ensure_editor_basemap(layers: Dictionary) -> void:
+	if not _map_layers_have_tiles(layers):
+		_paint_default_arena(layers)
+
+func _paint_default_arena(layers: Dictionary) -> void:
+	var water_layer := layers.get("Water", null) as TileMapLayer
+	var ground_layer := layers.get("Ground", null) as TileMapLayer
+	var shadow_layer := layers.get("Shadows", null) as TileMapLayer
+	var cliff_layer := _get_plateau_layer(layers)
+	if water_layer == null or ground_layer == null or shadow_layer == null or cliff_layer == null:
 		return
 
-	var status := str(environment_setup.get("status", "missing"))
-	match status:
-		"ready":
-			var tileset := environment_setup.get("tileset", null) as TileSet
-			log_event("ENVIRONMENT_TILESET_READY", {
-				"source": str(environment_setup.get("source_path", "")),
-				"source_count": tileset.get_source_count() if tileset != null else 0,
-			})
-		_:
-			log_event("ENVIRONMENT_TILESET_MISSING", {
-				"missing_asset_count": (environment_setup.get("missing_assets", []) as Array).size(),
-			})
+	var half_w := 30
+	var half_h := 20
+	var inner_w := 24
+	var inner_h := 15
+	var cliff_w := 27
+	var cliff_h := 18
 
-	_environment_tileset_state_logged = true
+	for y in range(-half_h, half_h + 1):
+		for x in range(-half_w, half_w + 1):
+			var cell := Vector2i(x, y)
+			water_layer.set_cell(cell, 0, Vector2i.ZERO, 0)
+			var inside_ground := abs(x) <= inner_w and abs(y) <= inner_h
+			var on_cliff_ring := abs(x) <= cliff_w and abs(y) <= cliff_h and not inside_ground
+			if inside_ground:
+				ground_layer.set_cell(cell, 1, Vector2i.ZERO, 0)
+				if abs(x) >= inner_w - 1 or abs(y) >= inner_h - 1:
+					shadow_layer.set_cell(cell, 2, Vector2i.ZERO, 0)
+			elif on_cliff_ring:
+				cliff_layer.set_cell(cell, 3, Vector2i.ZERO, 0)
 
-func _get_missing_environment_asset_paths() -> Array[String]:
-	var missing: Array[String] = []
-	for path in [_DEFAULT_ENV_TILESET_PATH]:
-		if not ResourceLoader.exists(path):
-			missing.append(path)
-	return missing
+	water_layer.notify_runtime_tile_data_update()
+	ground_layer.notify_runtime_tile_data_update()
+	shadow_layer.notify_runtime_tile_data_update()
+	cliff_layer.notify_runtime_tile_data_update()
 
 func _log_editor_tilemap_state(layers: Dictionary) -> void:
 	var used_counts := {}
