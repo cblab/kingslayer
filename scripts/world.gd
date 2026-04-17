@@ -35,16 +35,6 @@ const _MAP_LAYERS_ROOT_NAME := "MapLayers"
 const _ENV_COLLIDERS_ROOT_NAME := "TerrainCollision"
 const _ENVIRONMENT_ROOT_Z_INDEX := -100
 const _ENV_TILE_SIZE := Vector2i(64, 64)
-const _START_ANCHOR_PLAYER := "player"
-const _START_ANCHOR_RULER_RED := "ruler_red"
-const _START_ANCHOR_RULER_GREEN := "ruler_green"
-const _START_ANCHOR_RULER_BLUE := "ruler_blue"
-const _GUARD_NEARBY_OFFSETS: Array[Vector2] = [
-	Vector2(-128.0, 0.0),
-	Vector2(128.0, 0.0),
-	Vector2(0.0, -128.0),
-	Vector2(0.0, 128.0),
-]
 const _ARENA_BOUND_MARGIN := 32.0
 const _MAP_LAYER_CONFIGS := [
 	{"name": "Water", "z_index": 0, "y_sort_enabled": false, "y_sort_origin": 0},
@@ -73,7 +63,6 @@ func _ready() -> void:
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_setup_map_infrastructure()
 	_refresh_arena_walkable_space()
-	_apply_start_anchors_to_core_units()
 	_snap_initial_units_to_walkable_ground()
 	_prepare_periodic_free_knight_spawn_points()
 	_stabilize_world_state()
@@ -233,8 +222,6 @@ func _collect_visible_blocked_cells(layers: Dictionary) -> Dictionary:
 	if water_layer != null:
 		for cell in water_layer.get_used_cells():
 			water_total += 1
-			if ground_cells.has(cell):
-				continue
 			water_blocking += 1
 			blocked_cells[cell] = true
 
@@ -338,8 +325,6 @@ func _refresh_arena_walkable_space() -> void:
 	for cell in cliff_cells.keys():
 		blocked_cells[cell] = true
 	for cell in water_cells.keys():
-		if ground_cells.has(cell):
-			continue
 		blocked_cells[cell] = true
 
 	for cell in ground_cells.keys():
@@ -391,56 +376,6 @@ func _refresh_arena_walkable_space() -> void:
 	log_event("ARENA_WALKABLE_SPACE_READY", {
 		"walkable_cells": _arena_walkable_cells.size(),
 		"search_bounds": ruler_search_bounds,
-	})
-
-func _apply_start_anchors_to_core_units() -> void:
-	if _arena_walkable_cells.is_empty():
-		return
-
-	var anchor_points := {
-		_START_ANCHOR_PLAYER: _resolve_anchor_point(Vector2(0.50, 0.70)),
-		_START_ANCHOR_RULER_RED: _resolve_anchor_point(Vector2(0.22, 0.42)),
-		_START_ANCHOR_RULER_GREEN: _resolve_anchor_point(Vector2(0.78, 0.42)),
-		_START_ANCHOR_RULER_BLUE: _resolve_anchor_point(Vector2(0.50, 0.83)),
-	}
-
-	_assign_unit_to_anchor(get_node_or_null("PlayerUnit") as Unit, anchor_points.get(_START_ANCHOR_PLAYER, Vector2.INF), "PLAYER")
-
-	var ruler_red := get_node_or_null("RulerRed") as Unit
-	_assign_unit_to_anchor(ruler_red, anchor_points.get(_START_ANCHOR_RULER_RED, Vector2.INF), "RULER_RED")
-	_assign_guards_near_ruler(ruler_red, ["RedGuardA", "RedGuardB"])
-
-	var ruler_green := get_node_or_null("RulerGreen") as Unit
-	_assign_unit_to_anchor(ruler_green, anchor_points.get(_START_ANCHOR_RULER_GREEN, Vector2.INF), "RULER_GREEN")
-	_assign_guards_near_ruler(ruler_green, ["GreenGuardA", "GreenGuardB"])
-
-	var ruler_blue := get_node_or_null("RulerBlue") as Unit
-	_assign_unit_to_anchor(ruler_blue, anchor_points.get(_START_ANCHOR_RULER_BLUE, Vector2.INF), "RULER_BLUE")
-	_assign_guards_near_ruler(ruler_blue, ["BlueGuardA", "BlueGuardB"])
-
-func _assign_guards_near_ruler(ruler: Unit, guard_names: Array[String]) -> void:
-	if not _is_valid_live_unit(ruler):
-		return
-	for index in range(guard_names.size()):
-		var guard := get_node_or_null(guard_names[index]) as Unit
-		if guard == null:
-			continue
-		var desired: Vector2 = ruler.global_position + _GUARD_NEARBY_OFFSETS[index % _GUARD_NEARBY_OFFSETS.size()]
-		var resolved := _resolve_valid_spawn_point(desired)
-		if resolved == Vector2.INF:
-			resolved = _find_nearest_walkable_world_point(ruler.global_position, 8)
-		if resolved == Vector2.INF:
-			continue
-		guard.global_position = resolved
-
-func _assign_unit_to_anchor(unit: Unit, anchor: Vector2, anchor_name: String) -> void:
-	if unit == null or anchor == Vector2.INF:
-		return
-	unit.global_position = anchor
-	log_event("UNIT_START_ANCHORED", {
-		"unit": unit.name,
-		"anchor": anchor_name,
-		"position": anchor,
 	})
 
 func _resolve_anchor_point(normalized_position: Vector2) -> Vector2:
