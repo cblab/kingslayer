@@ -11,10 +11,6 @@ z_index = -100
 
 [node name="Ground" type="Node2D" parent="Environment" unique_id=1999200667]
 
-[node name="GroundVisual" type="Polygon2D" parent="Environment/Ground" unique_id=1133444735]
-color = Color(0.18, 0.58, 0.24, 1)
-polygon = PackedVector2Array(-1200, -280, 1150, -280, 1150, 1700, -1200, 1700)
-
 [node name="MapLayers" type="Node2D" parent="Environment" unique_id=666136115]
 
 [node name="Water" type="TileMapLayer" parent="Environment/MapLayers"]
@@ -36,24 +32,6 @@ y_sort_enabled = true
 [node name="PropsPlateau" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 50
 y_sort_enabled = true
-
-[node name="TerrainVisuals" type="Node2D" parent="Environment"]
-
-[node name="WaterEast" type="Polygon2D" parent="Environment/TerrainVisuals"]
-color = Color(0.16, 0.38, 0.82, 1)
-polygon = PackedVector2Array(1150, -280, 2200, -280, 2200, 1700, 1150, 1700)
-
-[node name="CliffNorth" type="Polygon2D" parent="Environment/TerrainVisuals"]
-color = Color(0.38, 0.36, 0.34, 1)
-polygon = PackedVector2Array(-520, -280, 1150, -280, 1150, 120, -520, 120)
-
-[node name="CliffInnerWest" type="Polygon2D" parent="Environment/TerrainVisuals"]
-color = Color(0.36, 0.34, 0.32, 1)
-polygon = PackedVector2Array(-260, 500, -20, 500, 80, 760, -120, 920, -320, 760)
-
-[node name="CliffInnerMid" type="Polygon2D" parent="Environment/TerrainVisuals"]
-color = Color(0.36, 0.34, 0.32, 1)
-polygon = PackedVector2Array(520, 760, 760, 760, 900, 960, 780, 1180, 560, 1160, 430, 940)
 
 [node name="TerrainCollision" type="Node2D" parent="Environment"]
 
