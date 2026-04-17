@@ -6,11 +6,16 @@
 [node name="World" type="Node2D"]
 script = ExtResource("1_world_script")
 
-[node name="Ground" type="Node2D" parent="."]
+[node name="Environment" type="Node2D" parent="."]
+z_index = -100
 
-[node name="GroundVisual" type="Polygon2D" parent="Ground"]
+[node name="Ground" type="Node2D" parent="Environment"]
+
+[node name="GroundVisual" type="Polygon2D" parent="Environment/Ground"]
 color = Color(0.9, 0.9, 0.9, 1)
 polygon = PackedVector2Array(-1400, -1300, 3600, -1300, 3600, 2600, -1400, 2600)
+
+[node name="MapLayers" type="Node2D" parent="Environment"]
 
 [node name="PlayerUnit" parent="." instance=ExtResource("2_unit_scene")]
 position = Vector2(-1000, 2000)
