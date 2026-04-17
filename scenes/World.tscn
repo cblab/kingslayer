@@ -12,11 +12,70 @@ z_index = -100
 [node name="Ground" type="Node2D" parent="Environment" unique_id=1999200667]
 
 [node name="GroundVisual" type="Polygon2D" parent="Environment/Ground" unique_id=1133444735]
-position = Vector2(-247, -36)
-color = Color(0.9, 0.9, 0.9, 1)
-polygon = PackedVector2Array(-1400, -1300, 3600, -1300, 3600, 2600, -1400, 2600)
+color = Color(0.18, 0.58, 0.24, 1)
+polygon = PackedVector2Array(-1200, -280, 1150, -280, 1150, 1700, -1200, 1700)
 
 [node name="MapLayers" type="Node2D" parent="Environment" unique_id=666136115]
+
+[node name="Water" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 0
+
+[node name="Ground" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 10
+
+[node name="Shadows" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 15
+
+[node name="Cliffs" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 20
+
+[node name="PropsGround" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 40
+y_sort_enabled = true
+
+[node name="PropsPlateau" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 50
+y_sort_enabled = true
+
+[node name="TerrainVisuals" type="Node2D" parent="Environment"]
+
+[node name="WaterEast" type="Polygon2D" parent="Environment/TerrainVisuals"]
+color = Color(0.16, 0.38, 0.82, 1)
+polygon = PackedVector2Array(1150, -280, 2200, -280, 2200, 1700, 1150, 1700)
+
+[node name="CliffNorth" type="Polygon2D" parent="Environment/TerrainVisuals"]
+color = Color(0.38, 0.36, 0.34, 1)
+polygon = PackedVector2Array(-520, -280, 1150, -280, 1150, 120, -520, 120)
+
+[node name="CliffInnerWest" type="Polygon2D" parent="Environment/TerrainVisuals"]
+color = Color(0.36, 0.34, 0.32, 1)
+polygon = PackedVector2Array(-260, 500, -20, 500, 80, 760, -120, 920, -320, 760)
+
+[node name="CliffInnerMid" type="Polygon2D" parent="Environment/TerrainVisuals"]
+color = Color(0.36, 0.34, 0.32, 1)
+polygon = PackedVector2Array(520, 760, 760, 760, 900, 960, 780, 1180, 560, 1160, 430, 940)
+
+[node name="TerrainCollision" type="Node2D" parent="Environment"]
+
+[node name="WaterEast" type="StaticBody2D" parent="Environment/TerrainCollision"]
+
+[node name="Collision" type="CollisionPolygon2D" parent="Environment/TerrainCollision/WaterEast"]
+polygon = PackedVector2Array(1150, -280, 2200, -280, 2200, 1700, 1150, 1700)
+
+[node name="CliffNorth" type="StaticBody2D" parent="Environment/TerrainCollision"]
+
+[node name="Collision" type="CollisionPolygon2D" parent="Environment/TerrainCollision/CliffNorth"]
+polygon = PackedVector2Array(-520, -280, 1150, -280, 1150, 120, -520, 120)
+
+[node name="CliffInnerWest" type="StaticBody2D" parent="Environment/TerrainCollision"]
+
+[node name="Collision" type="CollisionPolygon2D" parent="Environment/TerrainCollision/CliffInnerWest"]
+polygon = PackedVector2Array(-260, 500, -20, 500, 80, 760, -120, 920, -320, 760)
+
+[node name="CliffInnerMid" type="StaticBody2D" parent="Environment/TerrainCollision"]
+
+[node name="Collision" type="CollisionPolygon2D" parent="Environment/TerrainCollision/CliffInnerMid"]
+polygon = PackedVector2Array(520, 760, 760, 760, 900, 960, 780, 1180, 560, 1160, 430, 940)
 
 [node name="PlayerUnit" parent="." unique_id=963930090 instance=ExtResource("2_unit_scene")]
 position = Vector2(-1000, 2000)
@@ -106,55 +165,6 @@ ruler_path = NodePath("../RulerBlue")
 faction_id = 3
 faction_color = Color(0.24, 0.46, 0.9, 1)
 move_speed = 265.0
-
-[node name="Blockers" type="Node2D" parent="." unique_id=136723150]
-
-[node name="BlockerTop" type="StaticBody2D" parent="Blockers" unique_id=123401838]
-
-[node name="Visual" type="Polygon2D" parent="Blockers/BlockerTop" unique_id=1118658753]
-color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(180, -360, 980, -360, 900, 180, 260, 220)
-
-[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerTop" unique_id=304560254]
-polygon = PackedVector2Array(180, -360, 980, -360, 900, 180, 260, 220)
-
-[node name="BlockerBottom" type="StaticBody2D" parent="Blockers" unique_id=1490541065]
-
-[node name="Visual" type="Polygon2D" parent="Blockers/BlockerBottom" unique_id=2141874887]
-position = Vector2(-13, 286)
-color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(120, 1380, 980, 1380, 900, 760, 220, 760)
-
-[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerBottom" unique_id=758472196]
-position = Vector2(-13, 280)
-polygon = PackedVector2Array(120, 1380, 980, 1380, 900, 760, 220, 760)
-
-[node name="BlockerIsland" type="StaticBody2D" parent="Blockers" unique_id=1158685958]
-
-[node name="Visual" type="Polygon2D" parent="Blockers/BlockerIsland" unique_id=1964632665]
-color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(1260, 260, 1480, 330, 1410, 620, 1180, 560)
-
-[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerIsland" unique_id=1987109805]
-polygon = PackedVector2Array(1260, 260, 1480, 330, 1410, 620, 1180, 560)
-
-[node name="BlockerWestRidge" type="StaticBody2D" parent="Blockers" unique_id=188037226]
-
-[node name="Visual" type="Polygon2D" parent="Blockers/BlockerWestRidge" unique_id=761917769]
-color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(-420, 300, -120, 240, 20, 520, -70, 880, -360, 820, -520, 560)
-
-[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerWestRidge" unique_id=508871511]
-polygon = PackedVector2Array(-420, 300, -120, 240, 20, 520, -70, 880, -360, 820, -520, 560)
-
-[node name="BlockerEastRidge" type="StaticBody2D" parent="Blockers" unique_id=1200783766]
-
-[node name="Visual" type="Polygon2D" parent="Blockers/BlockerEastRidge" unique_id=1445468008]
-color = Color(0.25, 0.3, 0.35, 1)
-polygon = PackedVector2Array(1700, 280, 2050, 340, 2200, 700, 2040, 1020, 1710, 930, 1600, 560)
-
-[node name="Collision" type="CollisionPolygon2D" parent="Blockers/BlockerEastRidge" unique_id=881999143]
-polygon = PackedVector2Array(1700, 280, 2050, 340, 2200, 700, 2040, 1020, 1710, 930, 1600, 560)
 
 [node name="DebugHud" type="CanvasLayer" parent="." unique_id=2137936414]
 layer = 10

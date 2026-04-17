@@ -57,7 +57,6 @@ const _MAP_LAYER_CONFIGS := [
 func _ready() -> void:
 	_spawn_rng.randomize()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
-	_setup_map_infrastructure()
 	_prepare_periodic_free_knight_spawn_points()
 	_stabilize_world_state()
 	_refresh_debug_hud()
