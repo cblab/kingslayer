@@ -37,13 +37,7 @@ const _MAP_LAYERS_ROOT_NAME := "MapLayers"
 const _ENV_COLLIDERS_ROOT_NAME := "TerrainCollision"
 const _ENVIRONMENT_ROOT_Z_INDEX := -100
 const _ENV_TILE_SIZE := Vector2i(64, 64)
-const _ENV_TERRAIN_TEXTURE_PATH := "res://assets/Terrain/Tileset/Tilemap_color3.png"
-const _ENV_WATER_TEXTURE_PATH := "res://assets/Terrain/Tileset/Water Background color.png"
-const _ENV_SHADOW_TEXTURE_PATH := "res://assets/Terrain/Tileset/Shadow.png"
-const _ENV_SOURCE_WATER := 100
-const _ENV_SOURCE_TERRAIN := 200
-const _ENV_SOURCE_SHADOW := 300
-const _TEST_MAP_VERSION := "tile_arena_v1"
+const _DEFAULT_ENV_TILESET_PATH := "res://assets/Terrain/Tileset/environment_tileset.tres"
 const _START_ANCHOR_PLAYER := "player"
 const _START_ANCHOR_RULER_RED := "ruler_red"
 const _START_ANCHOR_RULER_GREEN := "ruler_green"
@@ -57,11 +51,13 @@ const _GUARD_NEARBY_OFFSETS: Array[Vector2] = [
 const _ARENA_BOUND_MARGIN := 32.0
 const _MAP_LAYER_CONFIGS := [
 	{"name": "Water", "z_index": 0, "y_sort_enabled": false, "y_sort_origin": 0},
+	{"name": "FoamRocks", "z_index": 5, "y_sort_enabled": false, "y_sort_origin": 0},
 	{"name": "Ground", "z_index": 10, "y_sort_enabled": false, "y_sort_origin": 0},
 	{"name": "Shadows", "z_index": 15, "y_sort_enabled": false, "y_sort_origin": 0},
-	{"name": "Cliffs", "z_index": 20, "y_sort_enabled": false, "y_sort_origin": 0},
+	{"name": "Plateau", "z_index": 20, "y_sort_enabled": true, "y_sort_origin": 0},
 	{"name": "PropsGround", "z_index": 40, "y_sort_enabled": true, "y_sort_origin": 0},
 	{"name": "PropsPlateau", "z_index": 50, "y_sort_enabled": true, "y_sort_origin": 0},
+	{"name": "Clouds", "z_index": 60, "y_sort_enabled": false, "y_sort_origin": 0},
 ]
 
 @onready var _debug_status_label: Label = $DebugHud/Panel/Margin/Content/StatusLabel
@@ -105,7 +101,7 @@ func _setup_map_infrastructure() -> void:
 	var environment_setup := _load_environment_tileset()
 	_apply_environment_tileset_to_layers(environment_setup.get("tileset", null) as TileSet)
 	_log_environment_tileset_state(environment_setup)
-	_build_tile_arena(environment_setup, layers)
+	_log_editor_tilemap_state(layers)
 	_rebuild_environment_colliders_from_tiles(layers)
 
 func _ensure_map_layers() -> Dictionary:
@@ -185,12 +181,12 @@ func _load_environment_tileset() -> Dictionary:
 		result["source_path"] = "<exported>"
 		return result
 
-	var runtime_tileset := _build_runtime_environment_tileset()
-	if runtime_tileset != null:
+	var default_tileset := load(_DEFAULT_ENV_TILESET_PATH) as TileSet
+	if default_tileset != null:
 		result["status"] = "ready"
 		result["ready"] = true
-		result["tileset"] = runtime_tileset
-		result["source_path"] = "<runtime:%s>" % _ENV_TERRAIN_TEXTURE_PATH
+		result["tileset"] = default_tileset
+		result["source_path"] = _DEFAULT_ENV_TILESET_PATH
 		return result
 
 	result["status"] = "missing"
@@ -225,115 +221,32 @@ func _log_environment_tileset_state(environment_setup: Dictionary) -> void:
 
 	_environment_tileset_state_logged = true
 
-func _build_runtime_environment_tileset() -> TileSet:
-	var terrain_texture := load(_ENV_TERRAIN_TEXTURE_PATH) as Texture2D
-	var water_texture := load(_ENV_WATER_TEXTURE_PATH) as Texture2D
-	var shadow_texture := load(_ENV_SHADOW_TEXTURE_PATH) as Texture2D
-	if terrain_texture == null or water_texture == null or shadow_texture == null:
-		return null
-
-	var tileset := TileSet.new()
-	tileset.tile_size = _ENV_TILE_SIZE
-
-	var water_source := TileSetAtlasSource.new()
-	water_source.texture = water_texture
-	water_source.texture_region_size = _ENV_TILE_SIZE
-	water_source.create_tile(Vector2i.ZERO)
-	tileset.add_source(water_source, _ENV_SOURCE_WATER)
-
-	var terrain_source := TileSetAtlasSource.new()
-	terrain_source.texture = terrain_texture
-	terrain_source.texture_region_size = _ENV_TILE_SIZE
-	for y in range(6):
-		for x in range(9):
-			terrain_source.create_tile(Vector2i(x, y))
-	tileset.add_source(terrain_source, _ENV_SOURCE_TERRAIN)
-
-	var shadow_source := TileSetAtlasSource.new()
-	shadow_source.texture = shadow_texture
-	shadow_source.texture_region_size = _ENV_TILE_SIZE
-	for y in range(3):
-		for x in range(3):
-			shadow_source.create_tile(Vector2i(x, y))
-	tileset.add_source(shadow_source, _ENV_SOURCE_SHADOW)
-
-	return tileset
-
 func _get_missing_environment_asset_paths() -> Array[String]:
 	var missing: Array[String] = []
-	for path in [
-		_ENV_TERRAIN_TEXTURE_PATH,
-		_ENV_WATER_TEXTURE_PATH,
-		_ENV_SHADOW_TEXTURE_PATH,
-	]:
+	for path in [_DEFAULT_ENV_TILESET_PATH]:
 		if not ResourceLoader.exists(path):
 			missing.append(path)
 	return missing
 
+func _log_editor_tilemap_state(layers: Dictionary) -> void:
+	var used_counts := {}
+	for layer_name in layers.keys():
+		var layer := layers[layer_name] as TileMapLayer
+		if layer == null:
+			continue
+		used_counts[layer_name] = layer.get_used_cells().size()
+	log_event("EDITOR_TILEMAP_STATE", {
+		"layers": used_counts,
+	})
+
 func _map_layers_have_tiles(layers: Dictionary) -> bool:
-	for layer_name in ["Water", "Ground", "Cliffs", "Shadows"]:
+	for layer_name in ["Water", "Ground", "Plateau", "Shadows"]:
 		var layer := layers.get(layer_name, null) as TileMapLayer
 		if layer == null:
 			continue
 		if not layer.get_used_cells().is_empty():
 			return true
 	return false
-
-func _build_tile_arena(environment_setup: Dictionary, layers: Dictionary) -> void:
-	var tileset := environment_setup.get("tileset", null) as TileSet
-	if tileset == null:
-		log_event("TILE_ARENA_SKIPPED", {
-			"reason": "missing_environment_tileset",
-		})
-		return
-
-	var tile_refs := _pick_test_island_tile_refs(tileset)
-	if tile_refs.is_empty():
-		log_event("TILE_ARENA_SKIPPED", {
-			"reason": "tileset_has_no_atlas_tiles",
-		})
-		return
-
-	for layer_name in layers.keys():
-		var layer := layers[layer_name] as TileMapLayer
-		if layer == null:
-			continue
-		layer.clear()
-
-	var water_layer := layers.get("Water", null) as TileMapLayer
-	var ground_layer := layers.get("Ground", null) as TileMapLayer
-	var shadow_layer := layers.get("Shadows", null) as TileMapLayer
-	var cliff_layer := layers.get("Cliffs", null) as TileMapLayer
-
-	var ground_rect := Rect2i(Vector2i(-18, -12), Vector2i(58, 44))
-	var water_rect := ground_rect.grow(6)
-	var border_cliffs := _build_border_cliff_cells(ground_rect)
-	var interior_cliffs := _build_interior_cliff_cells()
-	var all_cliffs := border_cliffs + interior_cliffs
-	var shadow_cells := _build_border_shadow_cells(ground_rect)
-
-	_paint_rect(water_layer, water_rect, tile_refs.get("Water", {}))
-	_paint_rect(ground_layer, ground_rect, tile_refs.get("Ground", {}))
-	_paint_cells(cliff_layer, all_cliffs, tile_refs.get("Cliffs", {}))
-	_paint_cells(shadow_layer, shadow_cells, tile_refs.get("Shadows", {}))
-
-	for layer_name in ["PropsGround", "PropsPlateau"]:
-		var props_layer := layers.get(layer_name, null) as TileMapLayer
-		if props_layer != null:
-			props_layer.clear()
-
-	for layer_node in [water_layer, ground_layer, cliff_layer, shadow_layer]:
-		if layer_node != null:
-			layer_node.update_internals()
-
-	log_event("TILE_ARENA_BUILT", {
-		"ground_rect": ground_rect,
-		"water_rect": water_rect,
-		"border_cliff_cells": border_cliffs.size(),
-		"interior_cliff_cells": interior_cliffs.size(),
-		"map_version": _TEST_MAP_VERSION,
-		"tileset": str(environment_setup.get("source_path", "<runtime>")),
-	})
 
 func _rebuild_environment_colliders_from_tiles(layers: Dictionary) -> void:
 	var colliders_root := _ensure_environment_colliders_root()
@@ -361,7 +274,7 @@ func _collect_visible_blocked_cells(layers: Dictionary) -> Dictionary:
 		for cell in ground_layer.get_used_cells():
 			ground_cells[cell] = true
 
-	var cliff_layer := layers.get("Cliffs", null) as TileMapLayer
+	var cliff_layer := _get_plateau_layer(layers)
 	if cliff_layer != null:
 		for cell in cliff_layer.get_used_cells():
 			cliff_total += 1
@@ -383,6 +296,13 @@ func _collect_visible_blocked_cells(layers: Dictionary) -> Dictionary:
 		"ground_cells": ground_cells.size(),
 	})
 	return blocked_cells
+
+func _get_plateau_layer(layers: Dictionary) -> TileMapLayer:
+	return (
+		layers.get("Plateau", null) as TileMapLayer
+		if layers.has("Plateau")
+		else layers.get("Cliffs", null) as TileMapLayer
+	)
 
 func _add_environment_colliders_for_blocked_cells(parent: Node, blocked_cells: Dictionary) -> int:
 	if parent == null or blocked_cells.is_empty():
@@ -439,185 +359,6 @@ func _add_environment_collider_run(parent: Node, collider_index: int, start_x: i
 	body.add_child(shape)
 	return 1
 
-func _build_border_cliff_cells(ground_rect: Rect2i) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for y in range(ground_rect.position.y, ground_rect.end.y):
-		for x in range(ground_rect.position.x, ground_rect.end.x):
-			if x == ground_rect.position.x \
-			or x == ground_rect.end.x - 1 \
-			or y == ground_rect.position.y \
-			or y == ground_rect.end.y - 1:
-				cells.append(Vector2i(x, y))
-	return cells
-
-func _build_interior_cliff_cells() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for y in range(-1, 5):
-		for x in range(4, 10):
-			cells.append(Vector2i(x, y))
-	for y in range(12, 18):
-		for x in range(20, 28):
-			cells.append(Vector2i(x, y))
-	return cells
-
-func _build_border_shadow_cells(ground_rect: Rect2i) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for x in range(ground_rect.position.x, ground_rect.end.x):
-		cells.append(Vector2i(x, ground_rect.position.y + 1))
-	return cells
-
-func _pick_test_island_tile_refs(tileset: TileSet) -> Dictionary:
-	var preferred_tile_refs := {
-		"Water": _make_tile_ref(_ENV_SOURCE_WATER, Vector2i(0, 0)),
-		"Ground": _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(1, 1)),
-		"Cliffs": _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(6, 4)),
-		"Shadows": _make_tile_ref(_ENV_SOURCE_SHADOW, Vector2i(1, 1)),
-		"PropsGround": _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(2, 1)),
-		"PropsPlateau": _make_tile_ref(_ENV_SOURCE_TERRAIN, Vector2i(8, 4)),
-	}
-	if _tileset_has_tile_ref(tileset, preferred_tile_refs["Water"]) \
-	and _tileset_has_tile_ref(tileset, preferred_tile_refs["Ground"]) \
-	and _tileset_has_tile_ref(tileset, preferred_tile_refs["Cliffs"]) \
-	and _tileset_has_tile_ref(tileset, preferred_tile_refs["Shadows"]):
-		return preferred_tile_refs
-
-	var atlas_tile_refs := _collect_tileset_atlas_tile_refs(tileset)
-	var single_cell_tile_refs := _collect_tileset_atlas_tile_refs(tileset, true)
-	var tile_refs_pool := single_cell_tile_refs if not single_cell_tile_refs.is_empty() else atlas_tile_refs
-	if tile_refs_pool.is_empty():
-		return {}
-
-	var water_candidates := _filter_tile_refs_by_source_keywords(tile_refs_pool, [
-		"water background",
-		"water",
-	])
-	if water_candidates.is_empty():
-		water_candidates = tile_refs_pool
-	var terrain_candidates := _filter_tile_refs_by_source_keywords(tile_refs_pool, [
-		"tilemap_color3",
-		"tilemap",
-		"terrain",
-	])
-	if terrain_candidates.is_empty():
-		terrain_candidates = tile_refs_pool
-	var shadow_candidates := _filter_tile_refs_by_source_keywords(tile_refs_pool, [
-		"shadow",
-	])
-	if shadow_candidates.is_empty():
-		shadow_candidates = terrain_candidates
-
-	var ground_candidates := _filter_tile_refs_by_atlas_x_range(terrain_candidates, 0, 4)
-	if ground_candidates.is_empty():
-		ground_candidates = terrain_candidates
-
-	var cliff_candidates := _filter_tile_refs_by_atlas_x_range(terrain_candidates, 5, 8)
-	if cliff_candidates.is_empty():
-		cliff_candidates = terrain_candidates
-
-	return {
-		"Water": _get_tile_ref_or_first(water_candidates, 0),
-		"Ground": _get_tile_ref_or_first(ground_candidates, 0),
-		"Cliffs": _get_tile_ref_or_first(cliff_candidates, 0),
-		"Shadows": _get_tile_ref_or_first(shadow_candidates, 0),
-		"PropsGround": _get_tile_ref_or_first(ground_candidates, 1),
-		"PropsPlateau": _get_tile_ref_or_first(cliff_candidates, 1),
-	}
-
-func _collect_tileset_atlas_tile_refs(tileset: TileSet, single_cell_only := false) -> Array[Dictionary]:
-	var refs: Array[Dictionary] = []
-	if tileset == null:
-		return refs
-
-	for source_index in tileset.get_source_count():
-		var source_id := tileset.get_source_id(source_index)
-		var source := tileset.get_source(source_id)
-		if not (source is TileSetAtlasSource):
-			continue
-		var atlas_source := source as TileSetAtlasSource
-
-		for tile_index in atlas_source.get_tiles_count():
-			var atlas_coords := atlas_source.get_tile_id(tile_index)
-			var tile_size_in_atlas: Vector2i = atlas_source.get_tile_size_in_atlas(atlas_coords)
-			if single_cell_only and tile_size_in_atlas != Vector2i.ONE:
-				continue
-			var alternative_id := 0
-			if atlas_source.get_alternative_tiles_count(atlas_coords) > 0:
-				alternative_id = atlas_source.get_alternative_tile_id(atlas_coords, 0)
-			var texture_path := ""
-			if atlas_source.texture != null:
-				texture_path = atlas_source.texture.resource_path.to_lower()
-			refs.append({
-				"source_id": source_id,
-				"atlas_coords": atlas_coords,
-				"alternative_tile": alternative_id,
-				"tile_size_in_atlas": tile_size_in_atlas,
-				"source_path": texture_path,
-			})
-
-	return refs
-
-func _filter_tile_refs_by_source_keywords(tile_refs: Array[Dictionary], keywords: Array[String]) -> Array[Dictionary]:
-	var matches: Array[Dictionary] = []
-	for tile_ref in tile_refs:
-		var source_path := str(tile_ref.get("source_path", "")).to_lower()
-		for keyword in keywords:
-			if source_path.contains(keyword):
-				matches.append(tile_ref)
-				break
-	return matches
-
-func _filter_tile_refs_by_atlas_x_range(tile_refs: Array[Dictionary], min_x: int, max_x: int) -> Array[Dictionary]:
-	var matches: Array[Dictionary] = []
-	for tile_ref in tile_refs:
-		var atlas_coords := tile_ref.get("atlas_coords", Vector2i.ZERO) as Vector2i
-		if atlas_coords.x < min_x or atlas_coords.x > max_x:
-			continue
-		matches.append(tile_ref)
-	return matches
-
-func _get_tile_ref_or_first(tile_refs: Array[Dictionary], index: int) -> Dictionary:
-	if tile_refs.is_empty():
-		return {}
-	return tile_refs[min(index, tile_refs.size() - 1)]
-
-func _make_tile_ref(source_id: int, atlas_coords: Vector2i, alternative_tile: int = 0) -> Dictionary:
-	return {
-		"source_id": source_id,
-		"atlas_coords": atlas_coords,
-		"alternative_tile": alternative_tile,
-	}
-
-func _tileset_has_tile_ref(tileset: TileSet, tile_ref: Dictionary) -> bool:
-	if tileset == null or tile_ref.is_empty():
-		return false
-	var source_id := int(tile_ref.get("source_id", -1))
-	var source := tileset.get_source(source_id)
-	if not (source is TileSetAtlasSource):
-		return false
-	return source.has_tile(tile_ref.get("atlas_coords", Vector2i(-1, -1)))
-
-func _paint_rect(layer: TileMapLayer, rect: Rect2i, tile_ref: Dictionary) -> void:
-	if layer == null or tile_ref.is_empty():
-		return
-
-	for y in range(rect.position.y, rect.position.y + rect.size.y):
-		for x in range(rect.position.x, rect.position.x + rect.size.x):
-			_set_layer_cell(layer, Vector2i(x, y), tile_ref)
-
-func _paint_cells(layer: TileMapLayer, cells: Array[Vector2i], tile_ref: Dictionary) -> void:
-	if layer == null or tile_ref.is_empty():
-		return
-
-	for coords in cells:
-		_set_layer_cell(layer, coords, tile_ref)
-
-func _set_layer_cell(layer: TileMapLayer, coords: Vector2i, tile_ref: Dictionary) -> void:
-	layer.set_cell(
-		coords,
-		int(tile_ref.get("source_id", -1)),
-		tile_ref.get("atlas_coords", Vector2i(-1, -1)),
-		int(tile_ref.get("alternative_tile", 0))
-	)
 
 func _refresh_arena_walkable_space() -> void:
 	_arena_walkable_cells.clear()
@@ -633,7 +374,7 @@ func _refresh_arena_walkable_space() -> void:
 		ground_cells[cell] = true
 
 	var cliff_cells := {}
-	var cliff_layer := layers.get("Cliffs", null) as TileMapLayer
+	var cliff_layer := _get_plateau_layer(layers)
 	if cliff_layer != null:
 		for cell in cliff_layer.get_used_cells():
 			cliff_cells[cell] = true

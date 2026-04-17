@@ -2,9 +2,12 @@
 
 [ext_resource type="Script" uid="uid://ddghdp5h632d3" path="res://scripts/world.gd" id="1_world_script"]
 [ext_resource type="PackedScene" path="res://scenes/units/Unit.tscn" id="2_unit_scene"]
+[ext_resource type="TileSet" path="res://assets/Terrain/Tileset/environment_tileset.tres" id="3_environment_tileset"]
 
 [node name="World" type="Node2D" unique_id=422315232]
 script = ExtResource("1_world_script")
+y_sort_enabled = true
+environment_tileset = ExtResource("3_environment_tileset")
 
 [node name="Environment" type="Node2D" parent="." unique_id=613762835]
 z_index = -100
@@ -13,23 +16,38 @@ z_index = -100
 
 [node name="Water" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 0
+tile_set = ExtResource("3_environment_tileset")
+
+[node name="FoamRocks" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 5
+tile_set = ExtResource("3_environment_tileset")
 
 [node name="Ground" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 10
+tile_set = ExtResource("3_environment_tileset")
 
 [node name="Shadows" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 15
+tile_set = ExtResource("3_environment_tileset")
 
-[node name="Cliffs" type="TileMapLayer" parent="Environment/MapLayers"]
+[node name="Plateau" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 20
+y_sort_enabled = true
+tile_set = ExtResource("3_environment_tileset")
 
 [node name="PropsGround" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 40
 y_sort_enabled = true
+tile_set = ExtResource("3_environment_tileset")
 
 [node name="PropsPlateau" type="TileMapLayer" parent="Environment/MapLayers"]
 z_index = 50
 y_sort_enabled = true
+tile_set = ExtResource("3_environment_tileset")
+
+[node name="Clouds" type="TileMapLayer" parent="Environment/MapLayers"]
+z_index = 60
+tile_set = ExtResource("3_environment_tileset")
 
 [node name="TerrainCollision" type="Node2D" parent="Environment"]
 
