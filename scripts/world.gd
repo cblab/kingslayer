@@ -22,6 +22,8 @@ var _validated_periodic_free_knight_spawn_points: PackedVector2Array = PackedVec
 var _spawn_rng := RandomNumberGenerator.new()
 var _map_layers_ready_logged: bool = false
 var _environment_tileset_state_logged: bool = false
+var _arena_walkable_cells: Array[Vector2i] = []
+var _arena_walkable_rect: Rect2 = Rect2()
 
 const _FREE_KNIGHT_SCENE: PackedScene = preload("res://scenes/units/Unit.tscn")
 const _SPAWN_POINT_DUPLICATE_EPSILON: float = 8.0
@@ -41,6 +43,17 @@ const _ENV_SOURCE_WATER := 100
 const _ENV_SOURCE_TERRAIN := 200
 const _ENV_SOURCE_SHADOW := 300
 const _TEST_MAP_VERSION := "tile_arena_v1"
+const _START_ANCHOR_PLAYER := "player"
+const _START_ANCHOR_RULER_RED := "ruler_red"
+const _START_ANCHOR_RULER_GREEN := "ruler_green"
+const _START_ANCHOR_RULER_BLUE := "ruler_blue"
+const _GUARD_NEARBY_OFFSETS := [
+	Vector2(-92.0, 92.0),
+	Vector2(92.0, 92.0),
+	Vector2(-92.0, -92.0),
+	Vector2(92.0, -92.0),
+]
+const _ARENA_BOUND_MARGIN := 32.0
 const _MAP_LAYER_CONFIGS := [
 	{"name": "Water", "z_index": 0, "y_sort_enabled": false, "y_sort_origin": 0},
 	{"name": "Ground", "z_index": 10, "y_sort_enabled": false, "y_sort_origin": 0},
@@ -57,6 +70,8 @@ func _ready() -> void:
 	_spawn_rng.randomize()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_setup_map_infrastructure()
+	_refresh_arena_walkable_space()
+	_apply_start_anchors_to_core_units()
 	_snap_initial_units_to_walkable_ground()
 	_prepare_periodic_free_knight_spawn_points()
 	_stabilize_world_state()
@@ -603,6 +618,112 @@ func _set_layer_cell(layer: TileMapLayer, coords: Vector2i, tile_ref: Dictionary
 		int(tile_ref.get("alternative_tile", 0))
 	)
 
+func _refresh_arena_walkable_space() -> void:
+	_arena_walkable_cells.clear()
+	var layers := _ensure_map_layers()
+	var ground_layer := layers.get("Ground", null) as TileMapLayer
+	if ground_layer == null:
+		ruler_search_bounds = Rect2()
+		return
+
+	for cell in ground_layer.get_used_cells():
+		if _is_walkable_cell(cell):
+			_arena_walkable_cells.append(cell)
+
+	if _arena_walkable_cells.is_empty():
+		ruler_search_bounds = Rect2()
+		log_event("ARENA_WALKABLE_SPACE_EMPTY", {})
+		return
+
+	var min_cell := _arena_walkable_cells[0]
+	var max_cell := _arena_walkable_cells[0]
+	for cell in _arena_walkable_cells:
+		min_cell.x = mini(min_cell.x, cell.x)
+		min_cell.y = mini(min_cell.y, cell.y)
+		max_cell.x = maxi(max_cell.x, cell.x)
+		max_cell.y = maxi(max_cell.y, cell.y)
+
+	var origin := Vector2(min_cell.x * _ENV_TILE_SIZE.x, min_cell.y * _ENV_TILE_SIZE.y)
+	var size := Vector2(
+		((max_cell.x - min_cell.x) + 1) * _ENV_TILE_SIZE.x,
+		((max_cell.y - min_cell.y) + 1) * _ENV_TILE_SIZE.y
+	)
+	_arena_walkable_rect = Rect2(origin, size)
+	ruler_search_bounds = _arena_walkable_rect.grow(_ARENA_BOUND_MARGIN)
+	log_event("ARENA_WALKABLE_SPACE_READY", {
+		"walkable_cells": _arena_walkable_cells.size(),
+		"search_bounds": ruler_search_bounds,
+	})
+
+func _apply_start_anchors_to_core_units() -> void:
+	if _arena_walkable_cells.is_empty():
+		return
+
+	var anchor_points := {
+		_START_ANCHOR_PLAYER: _resolve_anchor_point(Vector2(0.50, 0.70)),
+		_START_ANCHOR_RULER_RED: _resolve_anchor_point(Vector2(0.22, 0.42)),
+		_START_ANCHOR_RULER_GREEN: _resolve_anchor_point(Vector2(0.78, 0.42)),
+		_START_ANCHOR_RULER_BLUE: _resolve_anchor_point(Vector2(0.50, 0.83)),
+	}
+
+	_assign_unit_to_anchor(get_node_or_null("PlayerUnit") as Unit, anchor_points.get(_START_ANCHOR_PLAYER, Vector2.INF), "PLAYER")
+
+	var ruler_red := get_node_or_null("RulerRed") as Unit
+	_assign_unit_to_anchor(ruler_red, anchor_points.get(_START_ANCHOR_RULER_RED, Vector2.INF), "RULER_RED")
+	_assign_guards_near_ruler(ruler_red, ["RedGuardA", "RedGuardB"])
+
+	var ruler_green := get_node_or_null("RulerGreen") as Unit
+	_assign_unit_to_anchor(ruler_green, anchor_points.get(_START_ANCHOR_RULER_GREEN, Vector2.INF), "RULER_GREEN")
+	_assign_guards_near_ruler(ruler_green, ["GreenGuardA", "GreenGuardB"])
+
+	var ruler_blue := get_node_or_null("RulerBlue") as Unit
+	_assign_unit_to_anchor(ruler_blue, anchor_points.get(_START_ANCHOR_RULER_BLUE, Vector2.INF), "RULER_BLUE")
+	_assign_guards_near_ruler(ruler_blue, ["BlueGuardA", "BlueGuardB"])
+
+func _assign_guards_near_ruler(ruler: Unit, guard_names: Array[String]) -> void:
+	if not _is_valid_live_unit(ruler):
+		return
+	for index in range(guard_names.size()):
+		var guard := get_node_or_null(guard_names[index]) as Unit
+		if guard == null:
+			continue
+		var desired := ruler.global_position + _GUARD_NEARBY_OFFSETS[index % _GUARD_NEARBY_OFFSETS.size()]
+		var resolved := _resolve_valid_spawn_point(desired)
+		if resolved == Vector2.INF:
+			resolved = _find_nearest_walkable_world_point(ruler.global_position, 8)
+		if resolved == Vector2.INF:
+			continue
+		guard.global_position = resolved
+
+func _assign_unit_to_anchor(unit: Unit, anchor: Vector2, anchor_name: String) -> void:
+	if unit == null or anchor == Vector2.INF:
+		return
+	unit.global_position = anchor
+	log_event("UNIT_START_ANCHORED", {
+		"unit": unit.name,
+		"anchor": anchor_name,
+		"position": anchor,
+	})
+
+func _resolve_anchor_point(normalized_position: Vector2) -> Vector2:
+	if _arena_walkable_rect.size == Vector2.ZERO:
+		return Vector2.INF
+	var raw := Vector2(
+		lerpf(_arena_walkable_rect.position.x + _ENV_TILE_SIZE.x, _arena_walkable_rect.end.x - _ENV_TILE_SIZE.x, clampf(normalized_position.x, 0.0, 1.0)),
+		lerpf(_arena_walkable_rect.position.y + _ENV_TILE_SIZE.y, _arena_walkable_rect.end.y - _ENV_TILE_SIZE.y, clampf(normalized_position.y, 0.0, 1.0))
+	)
+	return _resolve_valid_spawn_point(raw)
+
+func _get_default_periodic_spawn_anchors() -> Array[Vector2]:
+	var anchors: Array[Vector2] = []
+	if _arena_walkable_cells.is_empty():
+		return anchors
+	for normalized in [Vector2(0.14, 0.52), Vector2(0.86, 0.52), Vector2(0.38, 0.20), Vector2(0.62, 0.86)]:
+		var anchor := _resolve_anchor_point(normalized)
+		if anchor != Vector2.INF:
+			anchors.append(anchor)
+	return anchors
+
 func _world_to_cell(world_position: Vector2) -> Vector2i:
 	return Vector2i(
 		int(floor(world_position.x / float(_ENV_TILE_SIZE.x))),
@@ -1005,7 +1126,9 @@ func _spawn_free_knight_at_next_point() -> void:
 
 	var spawn_anchor := _validated_periodic_free_knight_spawn_points[_spawn_rng.randi_range(0, _validated_periodic_free_knight_spawn_points.size() - 1)]
 	var jitter := Vector2.RIGHT.rotated(_spawn_rng.randf_range(0.0, TAU)) * _spawn_rng.randf_range(0.0, _SPAWN_JITTER_RADIUS)
-	var spawn_point := _clamp_to_ruler_search_bounds(spawn_anchor + jitter)
+	var spawn_point := _resolve_valid_spawn_point(spawn_anchor + jitter)
+	if spawn_point == Vector2.INF:
+		spawn_point = spawn_anchor
 
 	var spawned_node := _FREE_KNIGHT_SCENE.instantiate()
 	if not (spawned_node is Unit):
@@ -1030,23 +1153,36 @@ func _prepare_periodic_free_knight_spawn_points() -> void:
 	_validated_periodic_free_knight_spawn_points = PackedVector2Array()
 
 	for source_point in periodic_free_knight_spawn_points:
-		var validated_spawn_point := _resolve_valid_spawn_point(source_point)
-		if validated_spawn_point == Vector2.INF:
-			log_event("FREE_KNIGHT_SPAWN_POINT_INVALID", {
-				"reason": "invalid_spawn_point",
-				"source_point": source_point,
-			})
-			continue
-		if _is_spawn_point_near_duplicate(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
-			continue
-		if _is_spawn_point_too_close(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
-			continue
-		_validated_periodic_free_knight_spawn_points.append(validated_spawn_point)
+		_try_register_spawn_point(source_point, "configured")
+
+	for fallback_anchor in _get_default_periodic_spawn_anchors():
+		_try_register_spawn_point(fallback_anchor, "arena_anchor")
+		if _validated_periodic_free_knight_spawn_points.size() >= _SPAWN_POINT_MIN_POOL_SIZE:
+			break
 
 	if _validated_periodic_free_knight_spawn_points.size() < _SPAWN_POINT_MIN_POOL_SIZE:
 		log_event("FREE_KNIGHT_SPAWN_POOL_DEGENERATE", {
 			"validated_points": _validated_periodic_free_knight_spawn_points.size(),
 		})
+	else:
+		log_event("FREE_KNIGHT_SPAWN_POOL_READY", {
+			"validated_points": _validated_periodic_free_knight_spawn_points.size(),
+		})
+
+func _try_register_spawn_point(source_point: Vector2, source_kind: String) -> void:
+	var validated_spawn_point := _resolve_valid_spawn_point(source_point)
+	if validated_spawn_point == Vector2.INF:
+		log_event("FREE_KNIGHT_SPAWN_POINT_INVALID", {
+			"reason": "invalid_spawn_point",
+			"source_kind": source_kind,
+			"source_point": source_point,
+		})
+		return
+	if _is_spawn_point_near_duplicate(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
+		return
+	if _is_spawn_point_too_close(_validated_periodic_free_knight_spawn_points, validated_spawn_point):
+		return
+	_validated_periodic_free_knight_spawn_points.append(validated_spawn_point)
 
 func _is_spawn_point_near_duplicate(points: PackedVector2Array, candidate: Vector2) -> bool:
 	for point in points:
@@ -1061,11 +1197,13 @@ func _is_spawn_point_too_close(points: PackedVector2Array, candidate: Vector2) -
 	return false
 
 func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
-	if not ruler_search_bounds.has_point(raw_spawn_point):
+	if _arena_walkable_cells.is_empty():
 		return Vector2.INF
+	if not ruler_search_bounds.has_point(raw_spawn_point):
+		raw_spawn_point = _clamp_to_ruler_search_bounds(raw_spawn_point)
 	if _is_walkable_world_point(raw_spawn_point):
 		return raw_spawn_point
-	return _find_nearest_walkable_world_point(raw_spawn_point, 12)
+	return _find_nearest_walkable_world_point(raw_spawn_point, 18)
 
 func _transfer_ruler_identity(dead_ruler: Unit, successor: Unit) -> void:
 	if not _is_valid_live_unit(dead_ruler):
