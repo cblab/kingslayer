@@ -47,11 +47,11 @@ const _START_ANCHOR_PLAYER := "player"
 const _START_ANCHOR_RULER_RED := "ruler_red"
 const _START_ANCHOR_RULER_GREEN := "ruler_green"
 const _START_ANCHOR_RULER_BLUE := "ruler_blue"
-const _GUARD_NEARBY_OFFSETS := [
-	Vector2(-92.0, 92.0),
-	Vector2(92.0, 92.0),
-	Vector2(-92.0, -92.0),
-	Vector2(92.0, -92.0),
+const _GUARD_NEARBY_OFFSETS: Array[Vector2] = [
+	Vector2(-128.0, 0.0),
+	Vector2(128.0, 0.0),
+	Vector2(0.0, -128.0),
+	Vector2(0.0, 128.0),
 ]
 const _ARENA_BOUND_MARGIN := 32.0
 const _MAP_LAYER_CONFIGS := [
@@ -687,7 +687,7 @@ func _assign_guards_near_ruler(ruler: Unit, guard_names: Array[String]) -> void:
 		var guard := get_node_or_null(guard_names[index]) as Unit
 		if guard == null:
 			continue
-		var desired := ruler.global_position + _GUARD_NEARBY_OFFSETS[index % _GUARD_NEARBY_OFFSETS.size()]
+		var desired: Vector2 = ruler.global_position + _GUARD_NEARBY_OFFSETS[index % _GUARD_NEARBY_OFFSETS.size()]
 		var resolved := _resolve_valid_spawn_point(desired)
 		if resolved == Vector2.INF:
 			resolved = _find_nearest_walkable_world_point(ruler.global_position, 8)
