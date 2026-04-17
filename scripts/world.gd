@@ -1,4 +1,3 @@
-@tool
 extends Node2D
 
 @export var world_stabilize_interval: float = 0.4
@@ -36,9 +35,6 @@ const _MAP_LAYERS_ROOT_NAME := "MapLayers"
 const _ENV_COLLIDERS_ROOT_NAME := "TerrainCollision"
 const _ENVIRONMENT_ROOT_Z_INDEX := -100
 const _ENV_TILE_SIZE := Vector2i(64, 64)
-const _WATER_TEXTURE_PATH := "res://assets/Terrain/Tileset/Water Background color.png"
-const _GROUND_TEXTURE_PATH := "res://assets/Terrain/Tileset/Tilemap_color3.png"
-const _SHADOW_TEXTURE_PATH := "res://assets/Terrain/Tileset/Shadow.png"
 const _START_ANCHOR_PLAYER := "player"
 const _START_ANCHOR_RULER_RED := "ruler_red"
 const _START_ANCHOR_RULER_GREEN := "ruler_green"
@@ -66,9 +62,13 @@ const _MAP_LAYER_CONFIGS := [
 
 
 func _enter_tree() -> void:
-	_setup_map_infrastructure()
+	if Engine.is_editor_hint():
+		return
 
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		return
+
 	_spawn_rng.randomize()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_setup_map_infrastructure()
@@ -102,39 +102,38 @@ func log_event(event_type: String, data: Dictionary) -> void:
 # Map infrastructure
 
 func _setup_map_infrastructure() -> void:
+	if Engine.is_editor_hint():
+		return
+
 	var layers := _ensure_map_layers()
-	var tileset := _create_base_tileset()
-	_apply_tileset_to_layers(layers, tileset)
-	_ensure_editor_basemap(layers)
-	_log_editor_tilemap_state(layers)
+	if layers.is_empty():
+		return
+
 	_rebuild_environment_colliders_from_tiles(layers)
 
 func _ensure_map_layers() -> Dictionary:
+	if Engine.is_editor_hint():
+		return {}
+
 	var layers: Dictionary = {}
-	var map_layers_root := _ensure_map_layers_root()
+	var map_layers_root := get_node_or_null("%s/%s" % [_ENVIRONMENT_ROOT_NAME, _MAP_LAYERS_ROOT_NAME]) as Node2D
+	if map_layers_root == null:
+		log_event("MAP_LAYERS_MISSING", {
+			"root_path": "%s/%s" % [_ENVIRONMENT_ROOT_NAME, _MAP_LAYERS_ROOT_NAME],
+		})
+		return layers
 
 	for layer_config in _MAP_LAYER_CONFIGS:
 		var layer_name := str(layer_config.get("name", "Layer"))
 		var layer := map_layers_root.get_node_or_null(layer_name) as TileMapLayer
 		if layer == null:
-			layer = TileMapLayer.new()
-			layer.name = layer_name
-			map_layers_root.add_child(layer)
-			map_layers_root.move_child(layer, map_layers_root.get_child_count() - 1)
-
-		layer.enabled = true
-		layer.collision_enabled = false
-		layer.navigation_enabled = false
-		layer.occlusion_enabled = false
-		layer.z_index = int(layer_config.get("z_index", 0))
-		layer.y_sort_enabled = bool(layer_config.get("y_sort_enabled", false))
-		layer.y_sort_origin = int(layer_config.get("y_sort_origin", 0))
+			continue
 		layers[layer_name] = layer
 
 	if not _map_layers_ready_logged:
 		log_event("MAP_LAYERS_READY", {
 			"layer_count": layers.size(),
-			"root": map_layers_root.get_path(),
+			"root": map_layers_root.get_path() if map_layers_root.is_inside_tree() else "%s/%s" % [_ENVIRONMENT_ROOT_NAME, _MAP_LAYERS_ROOT_NAME],
 		})
 		_map_layers_ready_logged = true
 
@@ -170,103 +169,27 @@ func _ensure_environment_colliders_root() -> Node2D:
 		environment_root.add_child(colliders_root)
 	return colliders_root
 
-func _create_base_tileset() -> TileSet:
-	var tileset := TileSet.new()
-	tileset.tile_size = _ENV_TILE_SIZE
-
-	var water_source := _create_atlas_source(_WATER_TEXTURE_PATH)
-	var ground_source := _create_atlas_source(_GROUND_TEXTURE_PATH)
-	var shadow_source := _create_atlas_source(_SHADOW_TEXTURE_PATH)
-	var cliff_source := _create_atlas_source(_GROUND_TEXTURE_PATH)
-
-	if water_source != null:
-		tileset.add_source(water_source, 0)
-	if ground_source != null:
-		tileset.add_source(ground_source, 1)
-	if shadow_source != null:
-		tileset.add_source(shadow_source, 2)
-	if cliff_source != null:
-		tileset.add_source(cliff_source, 3)
-
-	return tileset
-
-func _create_atlas_source(texture_path: String) -> TileSetAtlasSource:
-	var texture := load(texture_path) as Texture2D
-	if texture == null:
-		return null
-
-	var source := TileSetAtlasSource.new()
-	source.texture = texture
-	source.texture_region_size = _ENV_TILE_SIZE
-	source.create_tile(Vector2i.ZERO)
-	return source
-
 func _apply_tileset_to_layers(layers: Dictionary, tileset: TileSet) -> void:
-	for layer_name in layers.keys():
-		var layer := layers[layer_name] as TileMapLayer
-		if layer == null:
-			continue
-		layer.tile_set = tileset
-		layer.fix_invalid_tiles()
-
-func _ensure_editor_basemap(layers: Dictionary) -> void:
-	if not _map_layers_have_tiles(layers):
-		_paint_default_arena(layers)
-
-func _paint_default_arena(layers: Dictionary) -> void:
-	var water_layer := layers.get("Water", null) as TileMapLayer
-	var ground_layer := layers.get("Ground", null) as TileMapLayer
-	var shadow_layer := layers.get("Shadows", null) as TileMapLayer
-	var cliff_layer := _get_plateau_layer(layers)
-	if water_layer == null or ground_layer == null or shadow_layer == null or cliff_layer == null:
+	if Engine.is_editor_hint():
 		return
 
-	var half_w := 30
-	var half_h := 20
-	var inner_w := 24
-	var inner_h := 15
-	var cliff_w := 27
-	var cliff_h := 18
+	if tileset == null:
+		return
 
-	for y in range(-half_h, half_h + 1):
-		for x in range(-half_w, half_w + 1):
-			var cell := Vector2i(x, y)
-			water_layer.set_cell(cell, 0, Vector2i.ZERO, 0)
-			var inside_ground: bool = abs(x) <= inner_w and abs(y) <= inner_h
-			var on_cliff_ring: bool = abs(x) <= cliff_w and abs(y) <= cliff_h and not inside_ground
-			if inside_ground:
-				ground_layer.set_cell(cell, 1, Vector2i.ZERO, 0)
-				if abs(x) >= inner_w - 1 or abs(y) >= inner_h - 1:
-					shadow_layer.set_cell(cell, 2, Vector2i.ZERO, 0)
-			elif on_cliff_ring:
-				cliff_layer.set_cell(cell, 3, Vector2i.ZERO, 0)
-
-	water_layer.notify_runtime_tile_data_update()
-	ground_layer.notify_runtime_tile_data_update()
-	shadow_layer.notify_runtime_tile_data_update()
-	cliff_layer.notify_runtime_tile_data_update()
-
-func _log_editor_tilemap_state(layers: Dictionary) -> void:
-	var used_counts := {}
 	for layer_name in layers.keys():
 		var layer := layers[layer_name] as TileMapLayer
 		if layer == null:
 			continue
-		used_counts[layer_name] = layer.get_used_cells().size()
-	log_event("EDITOR_TILEMAP_STATE", {
-		"layers": used_counts,
-	})
-
-func _map_layers_have_tiles(layers: Dictionary) -> bool:
-	for layer_name in ["Water", "Ground", "Plateau", "Shadows"]:
-		var layer := layers.get(layer_name, null) as TileMapLayer
-		if layer == null:
+		if layer.tile_set == null:
 			continue
-		if not layer.get_used_cells().is_empty():
-			return true
-	return false
+		if layer.get_used_cells().is_empty():
+			continue
+		continue
 
 func _rebuild_environment_colliders_from_tiles(layers: Dictionary) -> void:
+	if Engine.is_editor_hint():
+		return
+
 	var colliders_root := _ensure_environment_colliders_root()
 	for child in colliders_root.get_children():
 		colliders_root.remove_child(child)
@@ -279,6 +202,14 @@ func _rebuild_environment_colliders_from_tiles(layers: Dictionary) -> void:
 		"blocked_cell_count": blocked_cells.size(),
 		"collider_count": collider_count,
 	})
+
+func _rebuild_environment_colliders() -> void:
+	if Engine.is_editor_hint():
+		return
+	var layers := _ensure_map_layers()
+	if layers.is_empty():
+		return
+	_rebuild_environment_colliders_from_tiles(layers)
 
 func _collect_visible_blocked_cells(layers: Dictionary) -> Dictionary:
 	var blocked_cells := {}
