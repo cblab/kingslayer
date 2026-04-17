@@ -33,7 +33,6 @@ const _ENVIRONMENT_ROOT_NAME := "Environment"
 const _MAP_LAYERS_ROOT_NAME := "MapLayers"
 const _ENV_COLLIDERS_ROOT_NAME := "Colliders"
 const _ENVIRONMENT_ROOT_Z_INDEX := -100
-const _GROUND_VISUAL_PATH := "Environment/Ground/GroundVisual"
 const _ENV_TILE_SIZE := Vector2i(64, 64)
 const _ENV_TERRAIN_TEXTURE_PATH := "res://assets/Terrain/Tileset/Tilemap_color3.png"
 const _ENV_WATER_TEXTURE_PATH := "res://assets/Terrain/Tileset/Water Background color.png"
@@ -58,6 +57,7 @@ func _ready() -> void:
 	_spawn_rng.randomize()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
 	_prepare_periodic_free_knight_spawn_points()
+	_setup_map_infrastructure()
 	_stabilize_world_state()
 	_refresh_debug_hud()
 
@@ -87,10 +87,9 @@ func _setup_map_infrastructure() -> void:
 	var layers := _ensure_map_layers()
 	var environment_setup := _load_environment_tileset()
 	_apply_environment_tileset_to_layers(environment_setup.get("tileset", null) as TileSet)
-	_set_ground_visual_visible(true)
 	_log_environment_tileset_state(environment_setup)
-	_build_test_island(environment_setup, layers)
-	_rebuild_environment_colliders()
+	if not _map_layers_have_tiles(layers):
+		_build_test_island(environment_setup, layers)
 
 func _ensure_map_layers() -> Dictionary:
 	var layers: Dictionary = {}
@@ -254,10 +253,14 @@ func _get_missing_environment_asset_paths() -> Array[String]:
 			missing.append(path)
 	return missing
 
-func _set_ground_visual_visible(is_visible: bool) -> void:
-	var ground_visual := get_node_or_null(_GROUND_VISUAL_PATH) as CanvasItem
-	if ground_visual != null:
-		ground_visual.visible = is_visible
+func _map_layers_have_tiles(layers: Dictionary) -> bool:
+	for layer_name in ["Water", "Ground", "Cliffs", "Shadows"]:
+		var layer := layers.get(layer_name, null) as TileMapLayer
+		if layer == null:
+			continue
+		if not layer.get_used_cells().is_empty():
+			return true
+	return false
 
 func _build_test_island(environment_setup: Dictionary, layers: Dictionary) -> void:
 	var tileset := environment_setup.get("tileset", null) as TileSet
