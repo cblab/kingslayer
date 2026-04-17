@@ -232,8 +232,8 @@ func _paint_default_arena(layers: Dictionary) -> void:
 		for x in range(-half_w, half_w + 1):
 			var cell := Vector2i(x, y)
 			water_layer.set_cell(cell, 0, Vector2i.ZERO, 0)
-			var inside_ground := abs(x) <= inner_w and abs(y) <= inner_h
-			var on_cliff_ring := abs(x) <= cliff_w and abs(y) <= cliff_h and not inside_ground
+			var inside_ground: bool = abs(x) <= inner_w and abs(y) <= inner_h
+			var on_cliff_ring: bool = abs(x) <= cliff_w and abs(y) <= cliff_h and not inside_ground
 			if inside_ground:
 				ground_layer.set_cell(cell, 1, Vector2i.ZERO, 0)
 				if abs(x) >= inner_w - 1 or abs(y) >= inner_h - 1:
