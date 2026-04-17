@@ -6,9 +6,9 @@ extends Node2D
 @export var periodic_free_knight_spawn_interval: float = 22.0
 @export var periodic_free_knight_spawn_enabled: bool = true
 @export var periodic_free_knight_spawn_points: PackedVector2Array = PackedVector2Array([
-	Vector2(120.0, 120.0),
-	Vector2(1330.0, 120.0),
-	Vector2(730.0, 980.0),
+	Vector2(-640.0, 0.0),
+	Vector2(0.0, 640.0),
+	Vector2(960.0, 0.0),
 ])
 @export var environment_tileset: TileSet
 
@@ -31,7 +31,7 @@ const _RULER_SEARCH_POINT_DUPLICATE_EPSILON: float = 8.0
 const _SPAWN_JITTER_RADIUS: float = 24.0
 const _ENVIRONMENT_ROOT_NAME := "Environment"
 const _MAP_LAYERS_ROOT_NAME := "MapLayers"
-const _ENV_COLLIDERS_ROOT_NAME := "Colliders"
+const _ENV_COLLIDERS_ROOT_NAME := "TerrainCollision"
 const _ENVIRONMENT_ROOT_Z_INDEX := -100
 const _ENV_TILE_SIZE := Vector2i(64, 64)
 const _ENV_TERRAIN_TEXTURE_PATH := "res://assets/Terrain/Tileset/Tilemap_color3.png"
@@ -40,7 +40,7 @@ const _ENV_SHADOW_TEXTURE_PATH := "res://assets/Terrain/Tileset/Shadow.png"
 const _ENV_SOURCE_WATER := 100
 const _ENV_SOURCE_TERRAIN := 200
 const _ENV_SOURCE_SHADOW := 300
-const _TEST_MAP_VERSION := "single_rect_v4"
+const _TEST_MAP_VERSION := "tile_arena_v1"
 const _MAP_LAYER_CONFIGS := [
 	{"name": "Water", "z_index": 0, "y_sort_enabled": false, "y_sort_origin": 0},
 	{"name": "Ground", "z_index": 10, "y_sort_enabled": false, "y_sort_origin": 0},
@@ -56,8 +56,9 @@ const _MAP_LAYER_CONFIGS := [
 func _ready() -> void:
 	_spawn_rng.randomize()
 	_periodic_spawn_cooldown = periodic_free_knight_spawn_interval
-	_prepare_periodic_free_knight_spawn_points()
 	_setup_map_infrastructure()
+	_snap_initial_units_to_walkable_ground()
+	_prepare_periodic_free_knight_spawn_points()
 	_stabilize_world_state()
 	_refresh_debug_hud()
 
@@ -88,8 +89,8 @@ func _setup_map_infrastructure() -> void:
 	var environment_setup := _load_environment_tileset()
 	_apply_environment_tileset_to_layers(environment_setup.get("tileset", null) as TileSet)
 	_log_environment_tileset_state(environment_setup)
-	if not _map_layers_have_tiles(layers):
-		_build_test_island(environment_setup, layers)
+	_build_tile_arena(environment_setup, layers)
+	_rebuild_environment_colliders_from_tiles(layers)
 
 func _ensure_map_layers() -> Dictionary:
 	var layers: Dictionary = {}
@@ -262,17 +263,17 @@ func _map_layers_have_tiles(layers: Dictionary) -> bool:
 			return true
 	return false
 
-func _build_test_island(environment_setup: Dictionary, layers: Dictionary) -> void:
+func _build_tile_arena(environment_setup: Dictionary, layers: Dictionary) -> void:
 	var tileset := environment_setup.get("tileset", null) as TileSet
 	if tileset == null:
-		log_event("TEST_ISLAND_SKIPPED", {
+		log_event("TILE_ARENA_SKIPPED", {
 			"reason": "missing_environment_tileset",
 		})
 		return
 
 	var tile_refs := _pick_test_island_tile_refs(tileset)
 	if tile_refs.is_empty():
-		log_event("TEST_ISLAND_SKIPPED", {
+		log_event("TILE_ARENA_SKIPPED", {
 			"reason": "tileset_has_no_atlas_tiles",
 		})
 		return
@@ -287,87 +288,138 @@ func _build_test_island(environment_setup: Dictionary, layers: Dictionary) -> vo
 	var ground_layer := layers.get("Ground", null) as TileMapLayer
 	var shadow_layer := layers.get("Shadows", null) as TileMapLayer
 	var cliff_layer := layers.get("Cliffs", null) as TileMapLayer
-	var props_ground_layer := layers.get("PropsGround", null) as TileMapLayer
-	var props_plateau_layer := layers.get("PropsPlateau", null) as TileMapLayer
-	var water_rect := Rect2i(-22, 18, 24, 22)
-	var ground_rect := Rect2i(Vector2i(-22, 18), Vector2i(18, 22))
-	var cliff_rect := Rect2i(Vector2i(-22, 18), Vector2i(12, 5))
+
+	var ground_rect := Rect2i(Vector2i(-18, -12), Vector2i(58, 44))
+	var water_rect := ground_rect.grow(6)
+	var border_cliffs := _build_border_cliff_cells(ground_rect)
+	var interior_cliffs := _build_interior_cliff_cells()
+	var all_cliffs := border_cliffs + interior_cliffs
+	var shadow_cells := _build_border_shadow_cells(ground_rect)
 
 	_paint_rect(water_layer, water_rect, tile_refs.get("Water", {}))
-	var ground_cells := _build_test_island_ground_cells()
-	var cliff_cells := _build_test_island_cliff_cells()
-	_paint_cells(ground_layer, ground_cells, tile_refs.get("Ground", {}))
-	_paint_cells(cliff_layer, cliff_cells, tile_refs.get("Cliffs", {}))
-	_paint_cells(shadow_layer, _build_test_island_shadow_cells(), tile_refs.get("Shadows", {}))
-	_paint_cells(props_ground_layer, _build_test_island_props_ground_cells(), tile_refs.get("PropsGround", {}))
-	_paint_cells(props_plateau_layer, _build_test_island_props_plateau_cells(), tile_refs.get("PropsPlateau", {}))
+	_paint_rect(ground_layer, ground_rect, tile_refs.get("Ground", {}))
+	_paint_cells(cliff_layer, all_cliffs, tile_refs.get("Cliffs", {}))
+	_paint_cells(shadow_layer, shadow_cells, tile_refs.get("Shadows", {}))
 
-	for layer_node in [
-		water_layer,
-		ground_layer,
-		shadow_layer,
-		cliff_layer,
-		props_ground_layer,
-		props_plateau_layer,
-	]:
+	for layer_name in ["PropsGround", "PropsPlateau"]:
+		var props_layer := layers.get(layer_name, null) as TileMapLayer
+		if props_layer != null:
+			props_layer.clear()
+
+	for layer_node in [water_layer, ground_layer, cliff_layer, shadow_layer]:
 		if layer_node != null:
 			layer_node.update_internals()
 
-	log_event("TEST_ISLAND_BUILT", {
-		"cliff_rect": cliff_rect,
-		"cliffs_tile": tile_refs.get("Cliffs", {}),
-		"ground_cells": ground_cells.size(),
+	log_event("TILE_ARENA_BUILT", {
 		"ground_rect": ground_rect,
-		"ground_tile": tile_refs.get("Ground", {}),
+		"water_rect": water_rect,
+		"border_cliff_cells": border_cliffs.size(),
+		"interior_cliff_cells": interior_cliffs.size(),
 		"map_version": _TEST_MAP_VERSION,
 		"tileset": str(environment_setup.get("source_path", "<runtime>")),
-		"water_rect": water_rect,
-		"water_tile": tile_refs.get("Water", {}),
 	})
 
-func _rebuild_environment_colliders() -> void:
-	var water_rect := Rect2i(-22, 18, 24, 22)
-	var ground_rect := Rect2i(Vector2i(-22, 18), Vector2i(18, 22))
-	var cliff_rect := Rect2i(Vector2i(-22, 18), Vector2i(12, 5))
-	var water_strip_rect := Rect2i(
-		Vector2i(ground_rect.end.x, water_rect.position.y),
-		Vector2i(water_rect.end.x - ground_rect.end.x, water_rect.size.y)
-	)
-
+func _rebuild_environment_colliders_from_tiles(layers: Dictionary) -> void:
 	var colliders_root := _ensure_environment_colliders_root()
 	for child in colliders_root.get_children():
 		colliders_root.remove_child(child)
 		child.queue_free()
 
-	var collider_count := 0
-	collider_count += _add_environment_collider_rect(colliders_root, "WaterRight", water_strip_rect)
-	collider_count += _add_environment_collider_rect(colliders_root, "CliffTop", cliff_rect)
+	var blocked_cells := {}
+	for layer_name in ["Water", "Cliffs"]:
+		var layer := layers.get(layer_name, null) as TileMapLayer
+		if layer == null:
+			continue
+		for cell in layer.get_used_cells():
+			blocked_cells[cell] = true
 
+	var collider_count := _add_environment_colliders_for_blocked_cells(colliders_root, blocked_cells)
 	log_event("ENVIRONMENT_COLLIDERS_REBUILT", {
-		"cliff_rect": cliff_rect,
+		"blocked_cell_count": blocked_cells.size(),
 		"collider_count": collider_count,
-		"water_strip_rect": water_strip_rect,
 	})
 
-func _add_environment_collider_rect(parent: Node, name: String, tile_rect: Rect2i) -> int:
-	if parent == null or tile_rect.size.x <= 0 or tile_rect.size.y <= 0:
+func _add_environment_colliders_for_blocked_cells(parent: Node, blocked_cells: Dictionary) -> int:
+	if parent == null or blocked_cells.is_empty():
 		return 0
 
+	var rows := {}
+	for cell in blocked_cells.keys():
+		var c := cell as Vector2i
+		if not rows.has(c.y):
+			rows[c.y] = []
+		(rows[c.y] as Array).append(c.x)
+
+	var row_keys := rows.keys()
+	row_keys.sort()
+	var collider_index := 0
+	for y in row_keys:
+		var xs := rows[y] as Array
+		xs.sort()
+		if xs.is_empty():
+			continue
+		var run_start := int(xs[0])
+		var run_end := run_start
+		for i in range(1, xs.size()):
+			var x := int(xs[i])
+			if x == run_end + 1:
+				run_end = x
+				continue
+			collider_index += _add_environment_collider_run(parent, collider_index, run_start, run_end, int(y))
+			run_start = x
+			run_end = x
+		collider_index += _add_environment_collider_run(parent, collider_index, run_start, run_end, int(y))
+
+	return collider_index
+
+func _add_environment_collider_run(parent: Node, collider_index: int, start_x: int, end_x: int, y: int) -> int:
+	if end_x < start_x:
+		return 0
+
+	var width := (end_x - start_x) + 1
+	var world_size := Vector2(width * _ENV_TILE_SIZE.x, _ENV_TILE_SIZE.y)
+
 	var body := StaticBody2D.new()
-	body.name = name
+	body.name = "Blocked_%d" % collider_index
 	parent.add_child(body)
 
 	var shape := CollisionShape2D.new()
 	var rectangle := RectangleShape2D.new()
-	var world_size := Vector2(tile_rect.size.x * _ENV_TILE_SIZE.x, tile_rect.size.y * _ENV_TILE_SIZE.y)
 	rectangle.size = world_size
 	shape.shape = rectangle
 	shape.position = Vector2(
-		(tile_rect.position.x * _ENV_TILE_SIZE.x) + (world_size.x * 0.5),
-		(tile_rect.position.y * _ENV_TILE_SIZE.y) + (world_size.y * 0.5)
+		(start_x * _ENV_TILE_SIZE.x) + (world_size.x * 0.5),
+		(y * _ENV_TILE_SIZE.y) + (world_size.y * 0.5)
 	)
 	body.add_child(shape)
 	return 1
+
+func _build_border_cliff_cells(ground_rect: Rect2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for y in range(ground_rect.position.y, ground_rect.end.y):
+		for x in range(ground_rect.position.x, ground_rect.end.x):
+			if x == ground_rect.position.x \
+			or x == ground_rect.end.x - 1 \
+			or y == ground_rect.position.y \
+			or y == ground_rect.end.y - 1:
+				cells.append(Vector2i(x, y))
+	return cells
+
+func _build_interior_cliff_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for y in range(-1, 5):
+		for x in range(4, 10):
+			cells.append(Vector2i(x, y))
+	for y in range(12, 18):
+		for x in range(20, 28):
+			cells.append(Vector2i(x, y))
+	return cells
+
+func _build_border_shadow_cells(ground_rect: Rect2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for x in range(ground_rect.position.x, ground_rect.end.x):
+		cells.append(Vector2i(x, ground_rect.position.y + 1))
+	return cells
 
 func _pick_test_island_tile_refs(tileset: TileSet) -> Dictionary:
 	var preferred_tile_refs := {
@@ -522,33 +574,63 @@ func _set_layer_cell(layer: TileMapLayer, coords: Vector2i, tile_ref: Dictionary
 		int(tile_ref.get("alternative_tile", 0))
 	)
 
-func _build_test_island_ground_cells() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	var main_ground_rect := Rect2i(Vector2i(-22, 18), Vector2i(18, 22))
-	for y in range(main_ground_rect.position.y, main_ground_rect.end.y):
-		for x in range(main_ground_rect.position.x, main_ground_rect.end.x):
-			cells.append(Vector2i(x, y))
-	return cells
+func _world_to_cell(world_position: Vector2) -> Vector2i:
+	return Vector2i(
+		int(floor(world_position.x / float(_ENV_TILE_SIZE.x))),
+		int(floor(world_position.y / float(_ENV_TILE_SIZE.y)))
+	)
 
-func _build_test_island_cliff_cells() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	var plateau_rect := Rect2i(Vector2i(-22, 18), Vector2i(12, 5))
-	for y in range(plateau_rect.position.y, plateau_rect.end.y):
-		for x in range(plateau_rect.position.x, plateau_rect.end.x):
-			cells.append(Vector2i(x, y))
-	return cells
+func _is_walkable_cell(cell: Vector2i) -> bool:
+	var layers := _ensure_map_layers()
+	var ground_layer := layers.get("Ground", null) as TileMapLayer
+	if ground_layer == null:
+		return false
+	if ground_layer.get_cell_source_id(cell) == -1:
+		return false
 
-func _build_test_island_shadow_cells() -> Array[Vector2i]:
-	var cells: Array[Vector2i] = []
-	for x in range(-22, -10):
-		cells.append(Vector2i(x, 23))
-	return cells
+	for blocking_layer_name in ["Water", "Cliffs"]:
+		var blocking_layer := layers.get(blocking_layer_name, null) as TileMapLayer
+		if blocking_layer == null:
+			continue
+		if blocking_layer.get_cell_source_id(cell) != -1:
+			return false
+	return true
 
-func _build_test_island_props_ground_cells() -> Array[Vector2i]:
-	return []
+func _is_walkable_world_point(world_position: Vector2) -> bool:
+	return _is_walkable_cell(_world_to_cell(world_position))
 
-func _build_test_island_props_plateau_cells() -> Array[Vector2i]:
-	return []
+func _find_nearest_walkable_world_point(world_position: Vector2, max_radius_cells: int = 6) -> Vector2:
+	var origin_cell := _world_to_cell(world_position)
+	if _is_walkable_cell(origin_cell):
+		return world_position
+
+	for radius in range(1, max_radius_cells + 1):
+		for y in range(origin_cell.y - radius, origin_cell.y + radius + 1):
+			for x in range(origin_cell.x - radius, origin_cell.x + radius + 1):
+				if abs(x - origin_cell.x) != radius and abs(y - origin_cell.y) != radius:
+					continue
+				var candidate_cell := Vector2i(x, y)
+				if not _is_walkable_cell(candidate_cell):
+					continue
+				return Vector2(
+					(candidate_cell.x * _ENV_TILE_SIZE.x) + (_ENV_TILE_SIZE.x * 0.5),
+					(candidate_cell.y * _ENV_TILE_SIZE.y) + (_ENV_TILE_SIZE.y * 0.5)
+				)
+
+	return Vector2.INF
+
+func _snap_initial_units_to_walkable_ground() -> void:
+	for unit in _get_live_units():
+		if _is_walkable_world_point(unit.global_position):
+			continue
+		var fallback := _find_nearest_walkable_world_point(unit.global_position, 14)
+		if fallback == Vector2.INF:
+			continue
+		unit.global_position = fallback
+		log_event("UNIT_START_RELOCATED", {
+			"unit": unit.name,
+			"position": unit.global_position,
+		})
 
 func _process(delta: float) -> void:
 	_stabilize_cooldown -= delta
@@ -926,7 +1008,9 @@ func _is_spawn_point_too_close(points: PackedVector2Array, candidate: Vector2) -
 func _resolve_valid_spawn_point(raw_spawn_point: Vector2) -> Vector2:
 	if not ruler_search_bounds.has_point(raw_spawn_point):
 		return Vector2.INF
-	return raw_spawn_point
+	if _is_walkable_world_point(raw_spawn_point):
+		return raw_spawn_point
+	return _find_nearest_walkable_world_point(raw_spawn_point, 12)
 
 func _transfer_ruler_identity(dead_ruler: Unit, successor: Unit) -> void:
 	if not _is_valid_live_unit(dead_ruler):
