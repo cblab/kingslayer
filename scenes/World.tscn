@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://b1x2y304w5v6u"]
+[gd_scene load_steps=3 format=3 uid="uid://b1x2y304w5v6u"]
 
 [ext_resource type="Script" uid="uid://ddghdp5h632d3" path="res://scripts/world.gd" id="1_world_script"]
 [ext_resource type="PackedScene" path="res://scenes/units/Unit.tscn" id="2_unit_scene"]
@@ -6,18 +6,25 @@
 [node name="World" type="Node2D" unique_id=422315232]
 script = ExtResource("1_world_script")
 
-[node name="Ground" type="Node2D" parent="." unique_id=1999200667]
+[node name="Environment" type="Node2D" parent="."]
+z_index = -100
 
-[node name="GroundVisual" type="Polygon2D" parent="Ground" unique_id=1133444735]
-position = Vector2(146, 166)
+[node name="Ground" type="Node2D" parent="Environment" unique_id=1999200667]
+
+[node name="GroundVisual" type="Polygon2D" parent="Environment/Ground" unique_id=1133444735]
 color = Color(0.9, 0.9, 0.9, 1)
 polygon = PackedVector2Array(-1400, -1300, 3600, -1300, 3600, 2600, -1400, 2600)
 
+[node name="MapLayers" type="Node2D" parent="Environment"]
+
 [node name="PlayerUnit" parent="." unique_id=963930090 instance=ExtResource("2_unit_scene")]
 position = Vector2(-1000, 2000)
+role = 0
+faction_id = -1
 free_knight_color = Color(0.45, 0.52, 0.62, 1)
 
 [node name="FollowCamera" type="Camera2D" parent="PlayerUnit" unique_id=693691179]
+enabled = true
 position_smoothing_enabled = true
 position_smoothing_speed = 8.0
 
